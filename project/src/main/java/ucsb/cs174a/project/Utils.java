@@ -1,10 +1,10 @@
 package ucsb.cs174a.project;
 
-
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.PreparedStatement;
 import java.util.Properties;
 
 import oracle.jdbc.pool.OracleDataSource;
@@ -12,8 +12,8 @@ import oracle.jdbc.OracleConnection;
 import java.sql.DatabaseMetaData;
 
 public class Utils {
-    
-     // The recommended format of a connection URL is:
+
+    // The recommended format of a connection URL is:
     // "jdbc:oracle:thin:@<DATABASE_NAME_LOWERCASE>_tp?TNS_ADMIN=<PATH_TO_WALLET>"
     // where
     // <DATABASE_NAME_LOWERCASE> is your database name in lowercase
@@ -31,6 +31,47 @@ public class Utils {
     public static void test_import() {
         System.out.println("from another class");
     }
+
+    // Todo: add stuff for tracking on the depot side too
+    public static void createItem(Connection connection, String stock_num, String category, int price, int warranty, String model_num, String man_name) throws SQLException{
+        // Check if manufacturer exists, if not add it
+        String checkManufacturerQuery = "SELECT 1 FROM MANUFACTURER WHERE MNAME = ?";
+
+        try (PreparedStatement statement = connection.prepareStatement(checkManufacturerQuery)) {
+            statement.setString(1, man_name);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    String addManufacturerQuery = "INSERT INTO MANUFACTURER (MNAME) VALUES (?)";
+                    try (PreparedStatement addManufacturerStatement = connection.prepareStatement(addManufacturerQuery)) {
+                        addManufacturerStatement.setString(1, man_name);
+                        addManufacturerStatement.executeUpdate();
+                    }
+                }
+            }
+        }
+
+        String query = "INSERT INTO ITEM " +
+                       "VALUES(?,?,?,?,?,?)";
+
+        try (PreparedStatement insertionQuery = connection.prepareStatement(query)) {
+            insertionQuery.setString(1, stock_num);
+            insertionQuery.setString(2, category);
+            insertionQuery.setDouble(3, price);
+            insertionQuery.setInt(4, warranty);
+            insertionQuery.setString(5, model_num);
+            insertionQuery.setString(6, man_name);
+
+            insertionQuery.executeUpdate();
+        } catch (Exception e) {
+            System.out.println("ERROR: insertion failed.");
+            System.out.println(e);
+        }
+    }
+
+    public static void addAttribute(Connection connection, String stock_num, String Key, String Pair) {
+
+    }
+
     public static void main(String args[]) throws SQLException {
         Properties info = new Properties();
 
@@ -43,10 +84,10 @@ public class Utils {
         OracleDataSource ods = new OracleDataSource();
 
         System.out.println("Setting connection properties...");
-        ods.setURL(Depot_DB_URL);
+        ods.setURL(Mart_DB_URL);
         ods.setConnectionProperties(info);
 
-        // With AutoCloseable, the connection is closed automatically
+        
         try (OracleConnection connection = (OracleConnection) ods.getConnection()) {
             System.out.println("Connection established!");
             // Get JDBC driver name and version
@@ -55,57 +96,57 @@ public class Utils {
             System.out.println("Driver Version: " + dbmd.getDriverVersion());
             // Print some connection properties
             System.out.println(
-                "Default Row Prefetch Value: " + connection.getDefaultRowPrefetch()
-            );
+                    "Default Row Prefetch Value: " + connection.getDefaultRowPrefetch());
             System.out.println("Database username: " + connection.getUserName());
             System.out.println();
             // Perform some database operations
-            // insertTA(connection);
-            // printInstructors(connection);
+            createItem(connection, "AA00101", "Laptop", 1_630, 12, "A6111", "HP");
         } catch (Exception e) {
             System.out.println("CONNECTION ERROR:");
             System.out.println(e);
         }
     }
 
-    // Inserts another TA into the Instructors table.
-    public static void insertTA(Connection connection) throws SQLException {
-        System.out.println("Preparing to insert TA into Instructors table...");
-        // Statement and ResultSet are AutoCloseable and closed automatically. 
-        try (Statement statement = connection.createStatement()) {
-            try (
-                ResultSet resultSet = statement.executeQuery(
-                    "INSERT INTO INSTRUCTORS VALUES (3, 'Momin Haider', 'TA')"
-                )
-            ) {}
-        } catch (Exception e) {
-            System.out.println("ERROR: insertion failed.");
-            System.out.println(e);
-        }
-    }
-
-    // Displays data from Instructors table.
-    public static void printInstructors(Connection connection) throws SQLException {
-        // Statement and ResultSet are AutoCloseable and closed automatically. 
-        try (Statement statement = connection.createStatement()) {
-            try (
-                ResultSet resultSet = statement.executeQuery(
-                    "SELECT * FROM INSTRUCTORS"
-                )
-            ) {
-                System.out.println("INSTRUCTORS:");
-                System.out.println("I_ID\tI_NAME\t\tI_ROLE");
-                while (resultSet.next()) {
-                    System.out.println(
-                        resultSet.getString("I_ID") + "\t"
-                        + resultSet.getString("I_NAME") + "\t"
-                        + resultSet.getString("I_ROLE")
-                    );
-                }
-            }
-        } catch (Exception e) {
-            System.out.println("ERROR: selection failed.");
-            System.out.println(e);
-        }
-    }
 }
+
+// // Inserts another TA into the Instructors table.
+// public static void insertTA(Connection connection) throws SQLException {
+// System.out.println("Preparing to insert TA into Instructors table...");
+// // Statement and ResultSet are AutoCloseable and closed automatically.
+// try (Statement statement = connection.createStatement()) {
+// try (
+// ResultSet resultSet = statement.executeQuery(
+// "INSERT INTO INSTRUCTORS VALUES (3, 'Momin Haider', 'TA')"
+// )
+// ) {}
+// } catch (Exception e) {
+// System.out.println("ERROR: insertion failed.");
+// System.out.println(e);
+// }
+// }
+
+// // Displays data from Instructors table.
+// public static void printInstructors(Connection connection) throws
+// SQLException {
+// // Statement and ResultSet are AutoCloseable and closed automatically.
+// try (Statement statement = connection.createStatement()) {
+// try (
+// ResultSet resultSet = statement.executeQuery(
+// "SELECT * FROM INSTRUCTORS"
+// )
+// ) {
+// System.out.println("INSTRUCTORS:");
+// System.out.println("I_ID\tI_NAME\t\tI_ROLE");
+// while (resultSet.next()) {
+// System.out.println(
+// resultSet.getString("I_ID") + "\t"
+// + resultSet.getString("I_NAME") + "\t"
+// + resultSet.getString("I_ROLE")
+// );
+// }
+// }
+// } catch (Exception e) {
+// System.out.println("ERROR: selection failed.");
+// System.out.println(e);
+// }
+// }

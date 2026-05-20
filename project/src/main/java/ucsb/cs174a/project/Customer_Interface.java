@@ -4,7 +4,13 @@ package ucsb.cs174a.project;
     // Customers can browse, add items to cart and Submit orders, also look at order history
     // Managers 
 public class Customer_Interface {
-    public static void main(String[] args) {
-        
-    }
+    // create_new_account
+    // list_items
+        // add to cart, helper function
+    // search_item, this one's a lil complicated
+        // add to cart, see above
+    // checkout
+    // view_prev_order
+        // also handles reordering?
+
 }
