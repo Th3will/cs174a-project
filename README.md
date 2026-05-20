@@ -1,2 +1,1 @@
-# cs174a-jdbc
-Simple JDBC testing for Oracle Cloud Autonomous Database
+CS 174A Final Project Spring 26

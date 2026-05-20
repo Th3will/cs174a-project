@@ -1,22 +1,5 @@
-/* Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.*/
-/*
-   DESCRIPTION    
-   This code sample shows how to use JDBC and the OracleDataSource API to establish a
-   connection to your database.
-   This is adapted from an official Oracle sample project
-   (https://github.com/oracle-samples/oracle-db-examples/blob/main/java/jdbc/ConnectionSamples/DataSourceSample.java)
-   to suit the needs of your CS174A project.
-    
-    Step 1: Download the Zipped JDBC driver (ojdbc11.jar) and Companion Jars from this
-            link:
-            https://www.oracle.com/database/technologies/appdev/jdbc-downloads.html
-            Extract the zipped contents into the lib folder. This allows your code to
-            interface properly with JDBC.
-    Step 2: Enter the database details (DB_USER, DB_PASSWORD and DB_URL) in this file.
-            Note that DB_URL will require you to know the path to your connection
-            wallet.
-    Step 3: Run the file with "java -cp lib/ojdbc11.jar ./src/TestConnection.java"
- */
+package ucsb.cs174a.project;
+
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -28,20 +11,26 @@ import oracle.jdbc.pool.OracleDataSource;
 import oracle.jdbc.OracleConnection;
 import java.sql.DatabaseMetaData;
 
-public class TestConnection {
-    // The recommended format of a connection URL is:
+public class Utils {
+    
+     // The recommended format of a connection URL is:
     // "jdbc:oracle:thin:@<DATABASE_NAME_LOWERCASE>_tp?TNS_ADMIN=<PATH_TO_WALLET>"
     // where
     // <DATABASE_NAME_LOWERCASE> is your database name in lowercase
     // and
     // <PATH_TO_WALLET> is the path to the connection wallet on your machine.
     // NOTE: on a Mac, there's no C: drive...
-    final static String DB_URL = "jdbc:oracle:thin:@dbname_tp?TNS_ADMIN=C:/Users/momin/Downloads/Wallet_dbname";
+    final static String Mart_DB_URL = "jdbc:oracle:thin:@a350bo5bjphz0nuj_tp?TNS_ADMIN=/home/wni/Documents/School/CS174A/Wallet_A350BO5BJPHZ0NUJ";
+    final static String Depot_DB_URL = "jdbc:oracle:thin:@cs174adepot_tp?TNS_ADMIN=/home/wni/Documents/School/CS174A/Wallet_CS174ADepot";
     final static String DB_USER = "ADMIN";
-    final static String DB_PASSWORD = "password";
+    final static String DB_PASSWORD = "cs174Apassword";
 
     // This method creates a database connection using
     // oracle.jdbc.pool.OracleDataSource.
+
+    public static void test_import() {
+        System.out.println("from another class");
+    }
     public static void main(String args[]) throws SQLException {
         Properties info = new Properties();
 
@@ -54,7 +43,7 @@ public class TestConnection {
         OracleDataSource ods = new OracleDataSource();
 
         System.out.println("Setting connection properties...");
-        ods.setURL(DB_URL);
+        ods.setURL(Depot_DB_URL);
         ods.setConnectionProperties(info);
 
         // With AutoCloseable, the connection is closed automatically
@@ -71,8 +60,8 @@ public class TestConnection {
             System.out.println("Database username: " + connection.getUserName());
             System.out.println();
             // Perform some database operations
-            insertTA(connection);
-            printInstructors(connection);
+            // insertTA(connection);
+            // printInstructors(connection);
         } catch (Exception e) {
             System.out.println("CONNECTION ERROR:");
             System.out.println(e);

@@ -1,1 +1,0 @@
-Class dependencies (.jar files) should go in this folder.
