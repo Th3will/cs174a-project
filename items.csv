@@ -1,0 +1,34 @@
+STOCK#,CATEGORY,MANU,MODEL#,DESCRIPTION,WARRANTY,COMPATIBILITY,PRICE,Min,Qty,Max,Location
+AA00101,Laptop,HP,A6111,Processor speed: 3.33Ghz,12,None,1630.00,1,2,2,A9
+,,,,Ram size: 512 Mb,,,,,,,
+,,,,Hard disk size: 100Gb,,,,,,,
+,,,,Display Size: 17”,,,,,,,
+AA00201,Desktop,Dell,B420,Processor speed: 2.53Ghz,12,None,239.00,2,3,5,A7
+,,,,Ram size: 256 Mb,,,,,,,
+,,,,Hard disk size: 80Gb,,,,,,,
+,,,,OS: none,,,,,,,
+AA00202,Desktop,eMachines,C3958,Processor speed: 2.9Ghz,12,None,369.99,2,4,5,B52
+,,,,Ram size: 512 Mb,,,,,,,
+,,,,Hard disk size: 80Gb,,,,,,,
+AA00301,Monitor,Envision,D720,Size: 17”,36,AA00201,69.99,3,4,6,C27
+,,,,Weight: 25 lb.,,AA00202,,,,,
+AA00302,Monitor,Samsung,E712,Size: 17”,36,AA00201,279.99,3,5,6,C13
+,,,,Weight: 9.6 lb.,,AA00202,,,,,
+AA00401,Software,Symantec,F2005,Required disk size: 128 MB,60,AA00101,19.99,5,7,9,D27
+,,,,Required RAM size: 64 MB,,AA00201,,,,,
+,,,,,,AA00202,,,,,
+AA00402,Software,McAfee,G2005,Required disk size: 128 MB,60,AA00101,19.99,5,7,9,D15
+,,,,Required RAM size: 64 MB,,AA00201,,,,,
+,,,,,,AA00202,,,,,
+AA00403,Software,Oracle,H26,Required disk size: 1 GB,12,AA00101,29.99,5,7,9,D3
+,,,,Required RAM size: 128 MB,,AA00201,,,,,
+,,,,,,AA00202,,,,,
+AA00501,Printer,HP,J1320,Resolution: 1200 dpi,12,AA00201,299.99,2,3,4,E7
+,,,,Sheet capacity: 500,,AA00202,,,,,
+,,,,Weight: .4 lb,,,,,,,
+AA00601,Camera,HP,K435,Resolution: 3.1 Mp,3,AA00201,119.99,2,3,5,F9
+,,,,Max zoom: 5 times,,AA00202,,,,,
+,,,,Weight: 24.7 lb,,,,,,,
+AA00602,Camera,Canon,L738,Resolution: 3.1 Mp,1,AA00201,329.99,2,3,5,F3
+,,,,Max zoom: 5 times,,AA00202,,,,,
+,,,,Weight: 24.7 lb,,,,,,,
