@@ -1,9 +1,9 @@
-CREATE TABLE Manufacturer (
+CREATE TABLE eDepot_Manufacturer (
     mname VARCHAR2(20),
     PRIMARY KEY (mname)
 );
 
-CREATE TABLE Location (
+CREATE TABLE eDepot_Location (
     letter CHAR(1),
     num NUMBER(10),
     PRIMARY KEY (letter, num),
@@ -12,7 +12,7 @@ CREATE TABLE Location (
     CONSTRAINT chk_location_letter CHECK (REGEXP_LIKE(letter, '^[A-Z]$'))
 );
 
-CREATE TABLE Warehouse_Item (
+CREATE TABLE eDepot_Warehouse_Item (
     stock_num CHAR(7),
     mname VARCHAR2(20),
     model_num VARCHAR2(20),
@@ -24,8 +24,8 @@ CREATE TABLE Warehouse_Item (
     loc_num NUMBER(10),
     
     PRIMARY KEY (stock_num),
-    CONSTRAINT fk_wi_manufacturer FOREIGN KEY (mname) REFERENCES Manufacturer(mname),
-    CONSTRAINT fk_wi_location FOREIGN KEY (loc_letter, loc_num) REFERENCES Location(letter, num),
+    CONSTRAINT fk_wi_manufacturer FOREIGN KEY (mname) REFERENCES eDepot_Manufacturer(mname),
+    CONSTRAINT fk_wi_location FOREIGN KEY (loc_letter, loc_num) REFERENCES eDepot_Location(letter, num),
     
     -- one product per location
     CONSTRAINT unq_location UNIQUE (loc_letter, loc_num),
@@ -42,41 +42,41 @@ CREATE TABLE Warehouse_Item (
     CONSTRAINT chk_level_logic CHECK (max_level >= min_level)
 );
 
-CREATE TABLE Replenishment_Order (
+CREATE TABLE eDepot_Replenishment_Order (
     oid NUMBER(10),
     mname VARCHAR2(20),
 
     PRIMARY KEY (oid),
-    CONSTRAINT fk_ro_manufacturer FOREIGN KEY (mname) REFERENCES Manufacturer(mname)
+    CONSTRAINT fk_ro_manufacturer FOREIGN KEY (mname) REFERENCES eDepot_Manufacturer(mname)
 );
 
-CREATE TABLE Shipping_Notice (
+CREATE TABLE eDepot_Shipping_Notice (
     snid NUMBER(10),
     shipping_company_name VARCHAR2(40),
 
     PRIMARY KEY (snid)
 );
 
-CREATE TABLE Replenishment_Line (
+CREATE TABLE eDepot_Replenishment_Line (
     oid NUMBER(10),
     stock_num CHAR(7),
     replenishment_quantity NUMBER(10) NOT NULL,
     
     PRIMARY KEY (oid, stock_num),
-    CONSTRAINT fk_rl_order FOREIGN KEY (oid) REFERENCES Replenishment_Order(oid),
-    CONSTRAINT fk_rl_item FOREIGN KEY (stock_num) REFERENCES Warehouse_Item(stock_num),
+    CONSTRAINT fk_rl_order FOREIGN KEY (oid) REFERENCES eDepot_Replenishment_Order(oid),
+    CONSTRAINT fk_rl_item FOREIGN KEY (stock_num) REFERENCES eDepot_Warehouse_Item(stock_num),
     
     CONSTRAINT chk_rl_qty CHECK (replenishment_quantity >= 0)
 );
 
-CREATE TABLE Notice_Line (
+CREATE TABLE eDepot_Notice_Line (
     snid NUMBER(10),
     stock_num CHAR(7),
     notice_quantity NUMBER(10) NOT NULL,
     
     PRIMARY KEY (snid, stock_num),
-    CONSTRAINT fk_nl_notice FOREIGN KEY (snid) REFERENCES Shipping_Notice(snid),
-    CONSTRAINT fk_nl_item FOREIGN KEY (stock_num) REFERENCES Warehouse_Item(stock_num),
+    CONSTRAINT fk_nl_notice FOREIGN KEY (snid) REFERENCES eDepot_Shipping_Notice(snid),
+    CONSTRAINT fk_nl_item FOREIGN KEY (stock_num) REFERENCES eDepot_Warehouse_Item(stock_num),
     
     CONSTRAINT chk_nl_qty CHECK (notice_quantity >= 0)
 );

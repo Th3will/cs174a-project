@@ -1,86 +1,106 @@
-CREATE TABLE Item (
-    stock_num CHAR(7),
-    category VARCHAR2(20),
-    price NUMBER(10, 2) NOT NULL,
-    warranty NUMBER(3) NOT NULL,
-    model_num VARCHAR2(20),
-    mname VARCHAR2(20),
-
-PRIMARY KEY (stock_num),
-CONSTRAINT fk_item_manufacturer FOREIGN KEY (mname) REFERENCES Manufacturer(mname),
+create table item (
+   stock_num char(7),
+   category  varchar2(20),
+   price     number(10,2) not null,
+   warranty  number(3) not null,
+   model_num varchar2(20),
+   mname     varchar2(20),
+   primary key ( stock_num ),
+   constraint fk_item_manufacturer foreign key ( mname )
+      references manufacturer ( mname ),
 
     -- Constraint: XXnnnnn pattern
-    CONSTRAINT chk_stock_num CHECK (REGEXP_LIKE(stock_num, '^[A-Z]{2}[0-9]{5}$')),
+   constraint chk_stock_num check ( regexp_like ( stock_num,
+                                                  '^[A-Z]{2}[0-9]{5}$' ) ),
 
     -- Constraint: Non-negative price and warranty
-    CONSTRAINT chk_item_price CHECK (price >= 0),
-    CONSTRAINT chk_warranty CHECK (warranty >= 0)
+   constraint chk_item_price check ( price >= 0 ),
+   constraint chk_warranty check ( warranty >= 0 )
 );
 
-CREATE TABLE Compatible_With (
-    orig_stock_num CHAR(7),
-    replacement_stock_num CHAR(7),
-    PRIMARY KEY (orig_stock_num, replacement_stock_num),
-    CONSTRAINT fk_comp_orig FOREIGN KEY (orig_stock_num) REFERENCES Item(stock_num),
-    CONSTRAINT fk_comp_repl FOREIGN KEY (replacement_stock_num) REFERENCES Item(stock_num)
+create table compatible_with (
+   orig_stock_num        char(7),
+   replacement_stock_num char(7),
+   primary key ( orig_stock_num,
+                 replacement_stock_num ),
+   constraint fk_comp_orig foreign key ( orig_stock_num )
+      references item ( stock_num ),
+   constraint fk_comp_repl foreign key ( replacement_stock_num )
+      references item ( stock_num )
 );
 
 
-CREATE TABLE Item_Attribute (
-    stock_num CHAR(7),
-    attr_name VARCHAR2(20),
-    attr_value NUMBER(10,2),
-    attr_unit VARCHAR2(10),
-    PRIMARY KEY (stock_num, attr_name),
-    CONSTRAINT fk_attr_item FOREIGN KEY (stock_num) REFERENCES Item(stock_num) ON DELETE CASCADE
+create table item_attribute (
+   stock_num  char(7),
+   attr_name  varchar2(20),
+   attr_value number(10,2),
+   attr_unit  varchar2(10),
+   primary key ( stock_num,
+                 attr_name ),
+   constraint fk_attr_item foreign key ( stock_num )
+      references item ( stock_num )
+         on delete cascade
 );
 
-CREATE TABLE Order_Line (
-    stock_num CHAR(7),
-    ord_num NUMBER(10),
-    order_price NUMBER(10, 2) NOT NULL,
-    order_quantity NUMBER(5) NOT NULL,
-
-    PRIMARY KEY (stock_num, ord_num),
-    CONSTRAINT fk_ol_item FOREIGN KEY (stock_num) REFERENCES Item(stock_num),
-    CONSTRAINT fk_ol_order FOREIGN KEY (ord_num) REFERENCES Order_Table(ord_num),
+create table order_line (
+   stock_num      char(7),
+   ord_num        number(10),
+   order_price    number(10,2) not null,
+   order_quantity number(5) not null,
+   primary key ( stock_num,
+                 ord_num ),
+   constraint fk_ol_item foreign key ( stock_num )
+      references item ( stock_num ),
+   constraint fk_ol_order foreign key ( ord_num )
+      references order_table ( ord_num ),
 
     -- Constraint: Non-negative price and quantity
-    CONSTRAINT chk_order_line_price CHECK (order_price >= 0),
-    CONSTRAINT chk_order_line_qty CHECK (order_quantity > 0)
+   constraint chk_order_line_price check ( order_price >= 0 ),
+   constraint chk_order_line_qty check ( order_quantity > 0 )
 );
 
-CREATE TABLE Order_Table ( 
-    ord_num NUMBER(10),
-    order_date DATE DEFAULT SYSDATE,
-    total NUMBER(10, 2) NOT NULL,
-    shipping_fee NUMBER(10, 2),
-    discount NUMBER(10, 2),
-    cid VARCHAR2(20),
-
-PRIMARY KEY (ord_num),
-    CONSTRAINT fk_order_customer FOREIGN KEY (cid) REFERENCES Customer(cid)
+create table order_table (
+   ord_num      number(10),
+   order_date   date default sysdate,
+   total        number(10,2) not null,
+   shipping_fee number(10,2),
+   discount     number(10,2),
+   cid          varchar2(20),
+   primary key ( ord_num ),
+   constraint fk_order_customer foreign key ( cid )
+      references customer ( cid )
 );
 
-CREATE TABLE Status (
-    level_name VARCHAR2(20),
-    threshold NUMBER(10, 2) NOT NULL,
-    shipping_fee NUMBER(5, 2) NOT NULL,
-    discount NUMBER(4, 2) NOT NULL,
-
-PRIMARY KEY (level_name)
+create table status (
+   level_name   varchar2(20),
+   threshold    number(10,2) not null,
+   shipping_fee number(5,2) not null,
+   discount     number(4,2) not null,
+   primary key ( level_name )
 );
 
-CREATE TABLE Customer (
-    cid VARCHAR2(20),
-first_name VARCHAR2(20),
-middle_name VARCHAR2(20),
-last_name VARCHAR2(20),
-    password VARCHAR2(20) NOT NULL,
-    email VARCHAR2(40),
-    address VARCHAR2(100),
-    level_name VARCHAR2(20),
+create table customer (
+   cid         varchar2(20),
+   first_name  varchar2(20),
+   middle_name varchar2(20),
+   last_name   varchar2(20),
+   password    varchar2(20) not null,
+   email       varchar2(40),
+   address     varchar2(100),
+   level_name  varchar2(20),
+   primary key ( cid ),
+   constraint fk_customer_status foreign key ( level_name )
+      references status ( level_name )
+);
 
-PRIMARY KEY (cid),
-    CONSTRAINT fk_customer_status FOREIGN KEY (level_name) REFERENCES Status(level_name)
+create table manager (
+    -- e for employee
+   eid         varchar2(20),
+   first_name  varchar2(20),
+   middle_name varchar2(20),
+   last_name   varchar2(20),
+   password    varchar2(20) not null,
+   email       varchar2(40),
+   address     varchar2(100),
+   primary key ( eid )
 );
