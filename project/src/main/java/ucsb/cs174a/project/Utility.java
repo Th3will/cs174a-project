@@ -24,10 +24,7 @@ public class Utility {
     // and
     // <PATH_TO_WALLET> is the path to the connection wallet on your machine.
     // NOTE: on a Mac, there's no C: drive...
-    final static String Mart_DB_URL = "jdbc:oracle:thin:@a350bo5bjphz0nuj_tp?TNS_ADMIN=/home/wni/Documents/School/CS174A/Wallet_A350BO5BJPHZ0NUJ";
-    final static String Depot_DB_URL = "jdbc:oracle:thin:@cs174adepot_tp?TNS_ADMIN=/home/wni/Documents/School/CS174A/Wallet_CS174ADepot";
-    final static String DB_USER = "ADMIN";
-    final static String DB_PASSWORD = "cs174Apassword";
+
 
     public static boolean verbose = false;
 
@@ -57,7 +54,8 @@ public class Utility {
     }
 
     // Todo: add stuff for tracking on the depot side too
-    public static void createItem(Connection connection, String stock_num, String category, int price, int warranty, String model_num, String man_name) throws SQLException{
+    public static void createItem(Connection connection, String stock_num, String category, int price, int warranty,
+            String model_num, String man_name) throws SQLException {
         // Check if manufacturer exists, if not add it
         String checkManufacturerQuery = "SELECT 1 FROM MANUFACTURER WHERE MNAME = ?";
 
@@ -66,7 +64,8 @@ public class Utility {
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) {
                     String addManufacturerQuery = "INSERT INTO MANUFACTURER (MNAME) VALUES (?)";
-                    try (PreparedStatement addManufacturerStatement = connection.prepareStatement(addManufacturerQuery)) {
+                    try (PreparedStatement addManufacturerStatement = connection
+                            .prepareStatement(addManufacturerQuery)) {
                         addManufacturerStatement.setString(1, man_name);
                         addManufacturerStatement.executeUpdate();
                     }
@@ -101,7 +100,7 @@ public class Utility {
             }
         } else {
             String query = "INSERT INTO ITEM " +
-                           "VALUES(?,?,?,?,?,?)";
+                    "VALUES(?,?,?,?,?,?)";
 
             try (PreparedStatement insertionQuery = connection.prepareStatement(query)) {
                 insertionQuery.setString(1, stock_num);
@@ -205,25 +204,25 @@ public class Utility {
                     currentItem.category = tokens[1].trim();
                     currentItem.manufacturer = tokens[2].trim();
                     currentItem.modelNum = tokens[3].trim();
-                    
+
                     String desc = tokens[4].trim();
                     if (!desc.isEmpty()) {
                         currentItem.attributes.add(desc);
                     }
-                    
+
                     currentItem.warranty = tokens[5].trim().isEmpty() ? 0 : Integer.parseInt(tokens[5].trim());
-                    
+
                     String comp = tokens[6].trim();
                     if (!comp.isEmpty() && !comp.equalsIgnoreCase("None")) {
                         currentItem.compatibilities.add(comp);
                     }
-                    
+
                     currentItem.price = tokens[7].trim().isEmpty() ? 0.0 : Double.parseDouble(tokens[7].trim());
                     currentItem.minLevel = tokens[8].trim().isEmpty() ? 0 : Integer.parseInt(tokens[8].trim());
                     currentItem.quantity = tokens[9].trim().isEmpty() ? 0 : Integer.parseInt(tokens[9].trim());
                     currentItem.maxLevel = tokens[10].trim().isEmpty() ? 0 : Integer.parseInt(tokens[10].trim());
                     currentItem.location = tokens[11].trim();
-                    
+
                     items.add(currentItem);
                 } else if (currentItem != null) {
                     String desc = tokens[4].trim();
@@ -252,7 +251,8 @@ public class Utility {
         // Pass 1: Upsert Items into eMart
         log("Importing items to eMart (pass 1)...");
         for (ParsedItem item : parsedItems) {
-            createItem(martConn, item.stockNum, item.category, (int) item.price, item.warranty, item.modelNum, item.manufacturer);
+            createItem(martConn, item.stockNum, item.category, (int) item.price, item.warranty, item.modelNum,
+                    item.manufacturer);
         }
 
         // Pass 1.5: Upsert Item Attributes into eMart
@@ -273,10 +273,10 @@ public class Utility {
                         }
                     }
 
-                    log("Stock: " + item.stockNum + 
-                        ", Name: " + (parsedAttr.name == null ? "Null" : parsedAttr.name) + 
-                        ", Value: " + (parsedAttr.value == null ? "Null" : parsedAttr.value) + 
-                        ", Unit: " + (parsedAttr.unit == null ? "Null" : parsedAttr.unit));
+                    log("Stock: " + item.stockNum +
+                            ", Name: " + (parsedAttr.name == null ? "Null" : parsedAttr.name) +
+                            ", Value: " + (parsedAttr.value == null ? "Null" : parsedAttr.value) +
+                            ", Unit: " + (parsedAttr.unit == null ? "Null" : parsedAttr.unit));
 
                     if (attrExists) {
                         String updateAttr = "UPDATE Item_Attribute SET attr_value = ?, attr_unit = ? WHERE stock_num = ? AND attr_name = ?";
@@ -324,7 +324,7 @@ public class Utility {
                         }
                     }
                 }
-                
+
                 if (targetExists) {
                     String checkComp = "SELECT 1 FROM Compatible_With WHERE orig_stock_num = ? AND replacement_stock_num = ?";
                     boolean compExists = false;
@@ -337,7 +337,7 @@ public class Utility {
                             }
                         }
                     }
-                    
+
                     if (!compExists) {
                         String insertComp = "INSERT INTO Compatible_With (orig_stock_num, replacement_stock_num) VALUES (?, ?)";
                         try (PreparedStatement stmt = martConn.prepareStatement(insertComp)) {
@@ -379,7 +379,7 @@ public class Utility {
                 String loc = item.location.trim().toUpperCase();
                 char letter = loc.charAt(0);
                 int num = Integer.parseInt(loc.substring(1));
-                
+
                 String checkLoc = "SELECT 1 FROM Location WHERE letter = ? AND num = ?";
                 boolean locExists = false;
                 try (PreparedStatement stmt = depotConn.prepareStatement(checkLoc)) {
@@ -399,7 +399,7 @@ public class Utility {
                         stmt.executeUpdate();
                     }
                 }
-                
+
                 // Warehouse_Item
                 String checkWI = "SELECT 1 FROM Warehouse_Item WHERE stock_num = ?";
                 boolean wiExists = false;
@@ -411,7 +411,7 @@ public class Utility {
                         }
                     }
                 }
-                
+
                 if (wiExists) {
                     String updateWI = "UPDATE Warehouse_Item SET mname = ?, model_num = ?, quantity = ?, min_level = ?, max_level = ?, loc_letter = ?, loc_num = ? WHERE stock_num = ?";
                     try (PreparedStatement stmt = depotConn.prepareStatement(updateWI)) {
@@ -448,8 +448,8 @@ public class Utility {
         List<Items> itemsList = new ArrayList<>();
         String selectQuery = "SELECT stock_num, category, price, warranty, model_num, mname FROM Item";
         try (Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(selectQuery)) {
-            
+                ResultSet resultSet = statement.executeQuery(selectQuery)) {
+
             while (resultSet.next()) {
                 String stockNum = resultSet.getString("stock_num");
                 String category = resultSet.getString("category");
@@ -507,27 +507,26 @@ public class Utility {
         Properties info = new Properties();
 
         log("Initializing connection properties...");
-        info.put(OracleConnection.CONNECTION_PROPERTY_USER_NAME, DB_USER);
-        info.put(OracleConnection.CONNECTION_PROPERTY_PASSWORD, DB_PASSWORD);
+        info.put(OracleConnection.CONNECTION_PROPERTY_USER_NAME, Constants.DB_USER);
+        info.put(OracleConnection.CONNECTION_PROPERTY_PASSWORD, Constants.DB_PASSWORD);
         info.put(OracleConnection.CONNECTION_PROPERTY_DEFAULT_ROW_PREFETCH, "20");
 
         log("Creating OracleDataSource for eMart...");
         OracleDataSource odsMart = new OracleDataSource();
-        odsMart.setURL(Mart_DB_URL);
+        odsMart.setURL(Constants.Mart_DB_URL);
         odsMart.setConnectionProperties(info);
 
         log("Creating OracleDataSource for eDepot...");
         OracleDataSource odsDepot = new OracleDataSource();
-        odsDepot.setURL(Depot_DB_URL);
+        odsDepot.setURL(Constants.Depot_DB_URL);
         odsDepot.setConnectionProperties(info);
 
-        
         try (OracleConnection martConn = (OracleConnection) odsMart.getConnection();
-             OracleConnection depotConn = (OracleConnection) odsDepot.getConnection()) {
+                OracleConnection depotConn = (OracleConnection) odsDepot.getConnection()) {
             log("Connections established!");
-            
+
             // Perform database import from CSV
-            importItems("/home/wni/Documents/School/CS174A/cs174a-project/items.csv", martConn, depotConn);
+            importItems(Constants.Items_CSV_Path, martConn, depotConn);
 
             log("\nRetrieving items from the eMart database to verify...");
             Items[] dbItems = getItems(martConn);
@@ -539,53 +538,12 @@ public class Utility {
             log("CONNECTION OR SQL ERROR:");
             log(e);
         }
-        
+
     }
 
 }
 
-// // Inserts another TA into the Instructors table.
-// public static void insertTA(Connection connection) throws SQLException {
-// System.out.println("Preparing to insert TA into Instructors table...");
-// // Statement and ResultSet are AutoCloseable and closed automatically.
-// try (Statement statement = connection.createStatement()) {
-// try (
-// ResultSet resultSet = statement.executeQuery(
-// "INSERT INTO INSTRUCTORS VALUES (3, 'Momin Haider', 'TA')"
-// )
-// ) {}
-// } catch (Exception e) {
-// System.out.println("ERROR: insertion failed.");
-// System.out.println(e);
-// }
-// }
-
-// // Displays data from Instructors table.
-// public static void printInstructors(Connection connection) throws
-// SQLException {
-// // Statement and ResultSet are AutoCloseable and closed automatically.
-// try (Statement statement = connection.createStatement()) {
-// try (
-// ResultSet resultSet = statement.executeQuery(
-// "SELECT * FROM INSTRUCTORS"
-// )
-// ) {
-// System.out.println("INSTRUCTORS:");
-// System.out.println("I_ID\tI_NAME\t\tI_ROLE");
-// while (resultSet.next()) {
-// System.out.println(
-// resultSet.getString("I_ID") + "\t"
-// + resultSet.getString("I_NAME") + "\t"
-// + resultSet.getString("I_ROLE")
-// );
-// }
-// }
-// } catch (Exception e) {
-// System.out.println("ERROR: selection failed.");
-// System.out.println(e);
-// }
-// }
-
+// Customer facing
 class Items {
     public String stock_num;
     public String category;
