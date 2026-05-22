@@ -6,4 +6,6 @@ public class Constants {
     public final static String DB_USER = "ADMIN";
     public final static String DB_PASSWORD = "cs174Apassword";
     public final static String Items_CSV_Path = "/home/wni/Documents/School/CS174A/cs174a-project/items.csv";
+    public final static String Customers_CSV_Path = "/home/wni/Documents/School/CS174A/cs174a-project/customers.csv";
+    public final static String Managers_CSV_Path = "/home/wni/Documents/School/CS174A/cs174a-project/managers.csv";
 }

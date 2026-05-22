@@ -1,8 +1,9 @@
-Lkim,Lkim,Linda Kim,lkim@cs,45 Oak Ave, Santa Barbara, CA 93101,Gold
-Djones,Djones,Derek Jones,djones@cs,88 Pine St, Goleta, CA 93117,Silver
-Mramirez,Mramirez,Maria Ramirez,mramirez@cs,12 Maple Rd, Carpinteria, CA 93013,New
-Tpatel,Tpatel,Tariq Patel,tpatel@ce,305 Elm Blvd, Ventura, CA 93001,New
-Bford,Bford,Blake Ford,bford@ce,200 Spruce Ct, Oxnard, CA 93030,Green
-Pchen,Pchen,Peter Chen,pchen@db,456 Database Wy, Datum, CA 93117,Silver
-Jgray,Jgray,Jim Gray,jgray@db,789 Database Rd, Datas, CA 93118,Green
-Dknuth,Dknuth,Donald Knuth,dknuth@cs,101 Compsci Ln, Comp, CA 94305,Gold
+ID,PASSWORD,NAME,EMAIL,ADDRESS,STATUS
+Lkim,Lkim,Linda Kim,lkim@cs,"45 Oak Ave, Santa Barbara, CA 93101",Gold
+Djones,Djones,Derek Jones,djones@cs,"88 Pine St, Goleta, CA 93117",Silver
+Mramirez,Mramirez,Maria Ramirez,mramirez@cs,"12 Maple Rd, Carpinteria, CA 93013",New
+Tpatel,Tpatel,Tariq Patel,tpatel@ce,"305 Elm Blvd, Ventura, CA 93001",New
+Bford,Bford,Blake Ford,bford@ce,"200 Spruce Ct, Oxnard, CA 93030",Green
+Pchen,Pchen,Peter Chen,pchen@db,"456 Database Wy, Datum, CA 93117",Silver
+Jgray,Jgray,Jim Gray,jgray@db,"789 Database Rd, Datas, CA 93118",Gold   
+Dknuth,Dknuth,Donald Knuth,dknuth@cs,"101 Compsci Ln, Comp, CA 94305",Gold
