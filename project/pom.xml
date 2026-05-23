@@ -98,7 +98,19 @@
         <plugin>
           <artifactId>maven-project-info-reports-plugin</artifactId>
           <version>3.6.1</version>
+
+        <!-- Consider changing this to 2 profiles for eDepot and eMart when Will starts to build out his code -->
+        <!-- currently, "mvn exec:java" automatically runs eDepot's Main.java program -->
         </plugin>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.1.0</version>
+            <configuration>
+              <mainClass>eDepot.Main</mainClass>
+            </configuration>
+        </plugin>
+
       </plugins>
     </pluginManagement>
   </build>
