@@ -1,4 +1,4 @@
-package ucsb.cs174a.project;
+package eMart;
 
 import java.sql.Connection;
 import java.sql.ResultSet;

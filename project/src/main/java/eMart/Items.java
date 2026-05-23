@@ -1,4 +1,4 @@
-package ucsb.cs174a.project;
+package eMart;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +47,23 @@ public class Items {
         }
         return 0;
     }
+
+    // get quantity by stock num
+    public static int getQuantityByStockNum(String stock_num, Connection conn) {
+        String query = "SELECT quantity FROM item WHERE stock_num = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setString(1, stock_num);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("quantity");
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
 
     public Items() {
         this.attributes = new ArrayList<>();

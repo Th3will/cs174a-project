@@ -1,4 +1,4 @@
-package ucsb.cs174a.project;
+package eMart;
 
 import java.util.Properties;
 import java.util.Scanner;
@@ -87,6 +87,12 @@ public class Customer_Interface {
         return;
     }
 
+    public static void new_shop(Customer customer, Connection emartConn, Connection depotConn){
+        while (true){
+            // by default gets the list of items and displays the first 10 items
+        }
+    }
+
     public static void shop(Customer customer, Connection emartConn, Connection depotConn) {
         while (true) {
             System.out.println("What would you like to do? (you're logged in!)\n" +
@@ -150,13 +156,24 @@ public class Customer_Interface {
             System.out.println("Database error during add to cart: " + e.getMessage());
             return;
         }
-
-        System.out.println("Please enter the quantity of the item you want to add to your cart");
-        int quantity = sc.nextInt();
-        // Update the cart with the new item quantity
-        // check if there is enough stock first using depot conn
-        
-        customer.cart.add(stockNum, quantity);
+        int quantity = 0;
+        while (true) {
+            System.out.println("Please enter the quantity of the item you want to add to your cart, enter 0 to cancel");
+            quantity = sc.nextInt();
+            if (quantity == 0) {
+                return;
+            }
+            if (quantity < 0) {
+                System.out.println("Please enter a valid quantity.");
+                continue;
+            }
+            // check if there is enough stock first using depot conn
+            if (quantityInStock >= quantity) {
+                customer.cart.add(stockNum, quantity);
+                break;
+            }
+            System.out.println("Not enough stock. " + quantityInStock + " items available.");
+        }
         return;
     }
 

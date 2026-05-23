@@ -1,4 +1,4 @@
-package ucsb.cs174a.project;
+package eMart;
 
 public class NameSplit {
     public final String firstName;

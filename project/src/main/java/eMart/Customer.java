@@ -1,4 +1,4 @@
-package ucsb.cs174a.project;
+package eMart;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -52,18 +52,12 @@ public class Customer {
         // for each item in cart, get price from emart and multiply by quantity
         for (Map.Entry<String, Integer> entry : this.items.entrySet()) {
             // query emart to get price
-            String query = "SELECT price FROM item WHERE stock_num = ?";
-            try (PreparedStatement pstmt = emartConn.prepareStatement(query)) {
-                pstmt.setString(1, entry.getKey());
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        total_price += entry.getValue() * rs.getDouble("price");
-                    }
-                }
-            } catch (SQLException e) {
-                System.out.println("Database error during price calculation: " + e.getMessage());
+            int price = Items.getPriceByStockNum(entry.getKey(), emartConn);
+            if (price == 0) {
+                System.out.println("Item not found in emart");
                 return 0;
             }
+            total_price += entry.getValue() * price;
         }
         return total_price;
        }    

@@ -1,4 +1,4 @@
-package ucsb.cs174a.project;
+package eMart;
 
 public class Constants {
     public final static String Mart_DB_URL = "jdbc:oracle:thin:@a350bo5bjphz0nuj_tp?TNS_ADMIN=/home/wni/Documents/School/CS174A/Wallet_A350BO5BJPHZ0NUJ";

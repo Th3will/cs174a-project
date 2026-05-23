@@ -1,4 +1,4 @@
-package ucsb.cs174a.project;
+package eMart;
 
 public class Manager {
     public void insert(){
