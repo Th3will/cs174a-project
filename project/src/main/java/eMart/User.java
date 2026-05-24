@@ -1,27 +1,49 @@
 package eMart;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
-
 public class User {
-    // Login
-    public User Login(String email, String password) {
-        return null;
-    }
-    // List Items
-    public void ListItems() {
-        // get a Cursor to the Mart and print items.
-            // For each item:
-                // get stock_num, category, price, warranty, model_num, man_name
-                // get attributes using the stock_num 
-                // get model_num's details using model_num
-                // Print it
+    private String id;
+    private String password;
+    private String email;
+    private String address;
+    private String firstName;
+    private String middleName;
+    private String lastName;
+
+    public User(String id, String password, String email, String address, String firstName, String middleName, String lastName) {
+        this.id = id;
+        this.password = password;
+        this.email = email;
+        this.address = address;
+        this.firstName = firstName;
+        this.middleName = middleName;
+        this.lastName = lastName;
     }
 
-    private void printItem(String stock_num, Connection connection) throws SQLException {
-
+    public String getId() {
+        return id;
     }
-    
+
+    public String getPassword() {
+        return password;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public String getMiddleName() {
+        return middleName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
 }

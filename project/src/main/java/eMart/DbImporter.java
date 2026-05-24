@@ -53,12 +53,41 @@ public class DbImporter {
         if (levelName == null || levelName.trim().isEmpty()) {
             return;
         }
+        
+        double threshold = 100.0;
+        double shippingFee = 10.0;
+        double discount = 0.0;
+
+        if (levelName.equalsIgnoreCase("Gold")) {
+            discount = 10.0;
+        } else if (levelName.equalsIgnoreCase("Silver")) {
+            discount = 5.0;
+        } else if (levelName.equalsIgnoreCase("Green")) {
+            discount = 0.0;
+        } else if (levelName.equalsIgnoreCase("New")) {
+            threshold = 0.0;
+            shippingFee = 0.0;
+            discount = 10.0;
+        }
+
         if (recordExists(conn, "status", "level_name", levelName)) {
+            String updateQuery = "UPDATE status SET threshold = ?, shipping_fee = ?, discount = ? WHERE level_name = ?";
+            try (PreparedStatement stmt = conn.prepareStatement(updateQuery)) {
+                stmt.setDouble(1, threshold);
+                stmt.setDouble(2, shippingFee);
+                stmt.setDouble(3, discount);
+                stmt.setString(4, levelName);
+                stmt.executeUpdate();
+            }
             return;
         }
-        String insertQuery = "INSERT INTO status (level_name, threshold, shipping_fee, discount) VALUES (?, 0.0, 0.0, 0.0)";
+
+        String insertQuery = "INSERT INTO status (level_name, threshold, shipping_fee, discount) VALUES (?, ?, ?, ?)";
         try (PreparedStatement stmt = conn.prepareStatement(insertQuery)) {
             stmt.setString(1, levelName);
+            stmt.setDouble(2, threshold);
+            stmt.setDouble(3, shippingFee);
+            stmt.setDouble(4, discount);
             stmt.executeUpdate();
         }
     }
