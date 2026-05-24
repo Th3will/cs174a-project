@@ -18,8 +18,10 @@ public class Main {
         }
 
         LocationDAO locDAO = new LocationDAO();
-        Location loc = new Location("A", 1);
+        Location loc1 = new Location("A", 1);
+        Location loc2 = new Location("A", 2);
 
-        locDAO.insertLocation(loc);
+        locDAO.insertLocation(loc1);
+        locDAO.insertLocation(loc2);
     }
 }
