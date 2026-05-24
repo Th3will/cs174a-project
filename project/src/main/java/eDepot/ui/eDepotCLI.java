@@ -38,7 +38,7 @@ public class eDepotCLI {
                     running = false;
                     break;
                 default:
-                    System.out.println("Not a valid selection, please try again.");
+                    System.out.println("\nNot a valid selection, please try again.");
             }
         }
     }
