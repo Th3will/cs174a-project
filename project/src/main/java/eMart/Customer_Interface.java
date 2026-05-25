@@ -30,6 +30,7 @@ public class Customer_Interface {
                 screen = screen.run();
             }
         }
+        System.exit(0);
     }
 
     public static Screen getStartScreen(Customer customer, Connection martConn, Connection depotConn, Screen parent) {

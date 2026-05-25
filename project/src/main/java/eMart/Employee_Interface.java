@@ -29,6 +29,7 @@ public class Employee_Interface {
                 screen = screen.run();
             }
         }
+        System.exit(0);
     }
 
     public static Screen getStartScreen(Manager manager, Connection martConn, Connection depotConn, Screen parent) {
