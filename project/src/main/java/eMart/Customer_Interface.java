@@ -130,22 +130,19 @@ public class Customer_Interface {
             System.out.println("Items in cart: " + customer.cart.getItems().size());
             System.out.println("=========================================");
             System.out.println("1. Browse Catalog");
-            System.out.println("2. Filter Catalog");
-            System.out.println("3. View Shopping Cart / Checkout");
-            System.out.println("4. Order History");
-            System.out.println("5. Logout");
+            System.out.println("2. View Shopping Cart / Checkout");
+            System.out.println("3. Order History");
+            System.out.println("4. Logout");
             System.out.println("=========================================");
             
             String choice = UIHelpers.promptString("Enter choice: ");
             if (choice.equals("1")) {
-                return new ItemListScreen(customer, martConn, depotConn, this, null, null);
+                return new ItemListScreen(customer, martConn, depotConn, this, null, null, null);
             } else if (choice.equals("2")) {
-                return new FilterSelectionScreen(customer, martConn, depotConn, this);
-            } else if (choice.equals("3")) {
                 return new CartScreen(customer, martConn, depotConn, this);
-            } else if (choice.equals("4")) {
+            } else if (choice.equals("3")) {
                 return new OrderHistoryListScreen(customer, martConn, depotConn, this);
-            } else if (choice.equals("5")) {
+            } else if (choice.equals("4")) {
                 System.out.println("Logging out...");
                 UIHelpers.sleep(800);
                 return parent;
@@ -164,15 +161,148 @@ public class Customer_Interface {
         private final Screen parent;
         private final String filterWhereClause;
         private final List<Object> filterParams;
+        private final List<String> filterDescriptions;
 
         public ItemListScreen(Customer customer, Connection martConn, Connection depotConn, Screen parent,
-                              String filterWhereClause, List<Object> filterParams) {
+                              String filterWhereClause, List<Object> filterParams, List<String> filterDescriptions) {
             this.customer = customer;
             this.martConn = martConn;
             this.depotConn = depotConn;
             this.parent = parent;
             this.filterWhereClause = filterWhereClause;
             this.filterParams = filterParams;
+            this.filterDescriptions = filterDescriptions != null ? filterDescriptions : new ArrayList<>();
+        }
+
+        private class FilterAction implements TuiAction {
+            @Override
+            public boolean matches(String input) {
+                return input.equalsIgnoreCase("f") || input.equalsIgnoreCase("filter");
+            }
+
+            @Override
+            public String getCommandLabel() {
+                return "[f] Add Filter";
+            }
+
+            @Override
+            public Screen execute(String input) {
+                Utility.clearConsole();
+                System.out.println("=== Search Filters ===");
+                System.out.println("1. Filter by Category");
+                System.out.println("2. Filter by Manufacturer");
+                System.out.println("3. Filter by Max Price");
+                System.out.println("4. Filter by Attribute (Name and Value)");
+                System.out.println("5. Filter by Compatibility (Items that can replace target stock#)");
+                System.out.println("6. Cancel");
+                System.out.println("======================");
+                
+                String choice = UIHelpers.promptString("Enter selection: ");
+                if (choice.equals("6") || choice.isEmpty()) {
+                    return ItemListScreen.this;
+                }
+                
+                String chosenWhere = null;
+                List<Object> chosenParams = new ArrayList<>();
+                String description = null;
+                
+                if (choice.equals("1")) {
+                    String val = UIHelpers.promptString("Enter Category (leave empty to cancel): ");
+                    if (val.isEmpty()) return ItemListScreen.this;
+                    chosenWhere = "category = ?";
+                    chosenParams.add(val);
+                    description = "Category: " + val;
+                } else if (choice.equals("2")) {
+                    String val = UIHelpers.promptString("Enter Manufacturer name (leave empty to cancel): ");
+                    if (val.isEmpty()) return ItemListScreen.this;
+                    chosenWhere = "mname = ?";
+                    chosenParams.add(val);
+                    description = "Manufacturer: " + val;
+                } else if (choice.equals("3")) {
+                    String priceStr = UIHelpers.promptString("Enter Maximum Price (leave empty to cancel): ");
+                    if (priceStr.isEmpty()) return ItemListScreen.this;
+                    double maxVal = 0.0;
+                    try {
+                        maxVal = Double.parseDouble(priceStr);
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid price.");
+                        UIHelpers.sleep(1000);
+                        return ItemListScreen.this;
+                    }
+                    chosenWhere = "price <= ?";
+                    chosenParams.add(maxVal);
+                    description = "Max Price: " + maxVal;
+                } else if (choice.equals("4")) {
+                    String name = UIHelpers.promptString("Enter Attribute Name (leave empty to cancel): ");
+                    if (name.isEmpty()) return ItemListScreen.this;
+                    String valStr = UIHelpers.promptString("Enter Attribute Value (leave empty to cancel): ");
+                    if (valStr.isEmpty()) return ItemListScreen.this;
+                    double val = 0.0;
+                    try {
+                        val = Double.parseDouble(valStr);
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid numeric value.");
+                        UIHelpers.sleep(1000);
+                        return ItemListScreen.this;
+                    }
+                    chosenWhere = "stock_num IN (SELECT stock_num FROM item_attribute WHERE attr_name = ? AND attr_value = ?)";
+                    chosenParams.add(name);
+                    chosenParams.add(val);
+                    description = "Attribute (" + name + "): " + valStr;
+                } else if (choice.equals("5")) {
+                    String stock = UIHelpers.promptString("Enter Target Stock Number (leave empty to cancel): ");
+                    if (stock.isEmpty()) return ItemListScreen.this;
+                    chosenWhere = "stock_num IN (SELECT replacement_stock_num FROM compatible_with WHERE orig_stock_num = ?)";
+                    chosenParams.add(stock);
+                    description = "Compatible with: " + stock;
+                } else {
+                    System.out.println("Invalid selection.");
+                    UIHelpers.sleep(1000);
+                    return ItemListScreen.this;
+                }
+                
+                String newWhere;
+                if (filterWhereClause == null || filterWhereClause.isEmpty()) {
+                    newWhere = chosenWhere;
+                } else {
+                    newWhere = "(" + filterWhereClause + ") AND (" + chosenWhere + ")";
+                }
+                
+                List<Object> newParams = new ArrayList<>();
+                if (filterParams != null) {
+                    newParams.addAll(filterParams);
+                }
+                newParams.addAll(chosenParams);
+                
+                List<String> newDescriptions = new ArrayList<>(filterDescriptions);
+                newDescriptions.add(description);
+                
+                return new ItemListScreen(customer, martConn, depotConn, parent, newWhere, newParams, newDescriptions);
+            }
+        }
+
+        private class ClearFilterAction implements TuiAction {
+            @Override
+            public boolean matches(String input) {
+                return input.equalsIgnoreCase("c") || input.equalsIgnoreCase("clear");
+            }
+
+            @Override
+            public String getCommandLabel() {
+                return "[c] Clear Filters";
+            }
+
+            @Override
+            public Screen execute(String input) {
+                if (filterWhereClause == null || filterWhereClause.isEmpty()) {
+                    System.out.println("No filters to clear.");
+                    UIHelpers.sleep(1000);
+                    return ItemListScreen.this;
+                }
+                System.out.println("Clearing all filters...");
+                UIHelpers.sleep(800);
+                return new ItemListScreen(customer, martConn, depotConn, parent, null, null, null);
+            }
         }
 
         @Override
@@ -237,98 +367,19 @@ public class Customer_Interface {
             };
 
             List<TuiAction> actions = new ArrayList<>();
+            actions.add(new FilterAction());
+            actions.add(new ClearFilterAction());
+
+            String title = "Product Catalog";
+            if (!filterDescriptions.isEmpty()) {
+                title += " [Filters: " + String.join(", ", filterDescriptions) + "]";
+            }
+
             EntityListing<Items> listing = new EntityListing<>(
-                filterWhereClause == null ? "Product Catalog" : "Filtered Catalog Search",
+                title,
                 provider, displayer, selHandler, actions, parent
             );
             return listing.run();
-        }
-    }
-
-    private static class FilterSelectionScreen implements Screen {
-        private final Customer customer;
-        private final Connection martConn;
-        private final Connection depotConn;
-        private final Screen parent;
-
-        public FilterSelectionScreen(Customer customer, Connection martConn, Connection depotConn, Screen parent) {
-            this.customer = customer;
-            this.martConn = martConn;
-            this.depotConn = depotConn;
-            this.parent = parent;
-        }
-
-        @Override
-        public Screen run() {
-            Utility.clearConsole();
-            System.out.println("=== Search Filters ===");
-            System.out.println("1. Filter by Category");
-            System.out.println("2. Filter by Manufacturer");
-            System.out.println("3. Filter by Max Price");
-            System.out.println("4. Filter by Attribute (Name and Value)");
-            System.out.println("5. Filter by Compatibility (Items that can replace target stock#)");
-            System.out.println("6. Cancel");
-            System.out.println("======================");
-            
-            String choice = UIHelpers.promptString("Enter selection: ");
-            if (choice.equals("6")) {
-                return parent;
-            }
-            
-            String where = null;
-            List<Object> params = new ArrayList<>();
-            
-            if (choice.equals("1")) {
-                String val = UIHelpers.promptString("Enter Category (leave empty to cancel): ");
-                if (val.isEmpty()) return this;
-                where = "category = ?";
-                params.add(val);
-            } else if (choice.equals("2")) {
-                String val = UIHelpers.promptString("Enter Manufacturer name (leave empty to cancel): ");
-                if (val.isEmpty()) return this;
-                where = "mname = ?";
-                params.add(val);
-            } else if (choice.equals("3")) {
-                String priceStr = UIHelpers.promptString("Enter Maximum Price (leave empty to cancel): ");
-                if (priceStr.isEmpty()) return this;
-                double maxVal = 0.0;
-                try {
-                    maxVal = Double.parseDouble(priceStr);
-                } catch (NumberFormatException e) {
-                    System.out.println("Invalid price.");
-                    UIHelpers.sleep(1000);
-                    return this;
-                }
-                where = "price <= ?";
-                params.add(maxVal);
-            } else if (choice.equals("4")) {
-                String name = UIHelpers.promptString("Enter Attribute Name (leave empty to cancel): ");
-                if (name.isEmpty()) return this;
-                String valStr = UIHelpers.promptString("Enter Attribute Value (leave empty to cancel): ");
-                if (valStr.isEmpty()) return this;
-                double val = 0.0;
-                try {
-                    val = Double.parseDouble(valStr);
-                } catch (NumberFormatException e) {
-                    System.out.println("Invalid numeric value.");
-                    UIHelpers.sleep(1000);
-                    return this;
-                }
-                where = "stock_num IN (SELECT stock_num FROM item_attribute WHERE attr_name = ? AND attr_value = ?)";
-                params.add(name);
-                params.add(val);
-            } else if (choice.equals("5")) {
-                String stock = UIHelpers.promptString("Enter Target Stock Number (leave empty to cancel): ");
-                if (stock.isEmpty()) return this;
-                where = "stock_num IN (SELECT replacement_stock_num FROM compatible_with WHERE orig_stock_num = ?)";
-                params.add(stock);
-            } else {
-                System.out.println("Invalid selection.");
-                UIHelpers.sleep(1000);
-                return this;
-            }
-            
-            return new ItemListScreen(customer, martConn, depotConn, parent, where, params);
         }
     }
 

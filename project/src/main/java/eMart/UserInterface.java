@@ -188,6 +188,7 @@ interface Screen {
 interface TuiAction {
     boolean matches(String input);
     Screen execute(String input);
+    default String getCommandLabel() { return ""; }
 }
 
 @FunctionalInterface
@@ -314,8 +315,9 @@ class EntityListing<T> implements Screen {
             if (customActions != null && !customActions.isEmpty()) {
                 System.out.print("Commands: ");
                 for (TuiAction act : customActions) {
-                    // Legend logic if any
+                    System.out.print(act.getCommandLabel() + "  ");
                 }
+                System.out.println();
             }
             
             System.out.print("Enter selection (number/command): ");
