@@ -3,6 +3,7 @@ package eDepot.services;
 import eDepot.dao.WarehouseItemDAO;
 import eDepot.dao.ShippingNoticeDAO;
 import eDepot.dao.NoticeLineDAO;
+import eDepot.dao.NoticeLineDAO.LineDetail;
 import eDepot.dao.ReplenishmentOrderDAO;
 import eDepot.dao.ReplenishmentLineDAO;
 import eDepot.dao.ManufacturerDAO;
@@ -17,8 +18,11 @@ import eDepot.utils.DatabaseConnection;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /*
@@ -171,6 +175,23 @@ public class InventoryManager {
                     String stockNumber;
                     boolean newlyCreated;
                     if (existing != null) {
+                        // Reject the notice if fulfilling it would push the warehouse past max_level.
+                        // The chk_qty_limit DB constraint guards the eventual move-into-quantity step,
+                        // but we catch it here so the notice is rejected up front (no partial work).
+                        long projected = (long) existing.getQuantity()
+                                + (long) existing.getReplenishment()
+                                + (long) input.getQuantity();
+                        if (projected > existing.getMaxLevel()) {
+                            throw new IllegalArgumentException(
+                                    "Notice exceeds max stock level for "
+                                            + input.getManufacturerName() + "/" + input.getModelNumber()
+                                            + " (stock " + existing.getStockNumber() + "): "
+                                            + "quantity " + existing.getQuantity()
+                                            + " + replenishment " + existing.getReplenishment()
+                                            + " + notice " + input.getQuantity()
+                                            + " = " + projected
+                                            + " > max " + existing.getMaxLevel());
+                        }
                         stockNumber = existing.getStockNumber();
                         newlyCreated = false;
                         if (!warehouseItemDAO.addReplenishment(conn, stockNumber, input.getQuantity())) {
@@ -188,6 +209,15 @@ public class InventoryManager {
                             throw new IllegalArgumentException(
                                     "Max stock level must be >= min stock level for "
                                             + input.getManufacturerName() + "/" + input.getModelNumber());
+                        }
+                        // New product starts at quantity 0; the only thing that could exceed max_level
+                        // is a notice quantity larger than max_level itself.
+                        if (input.getQuantity() > input.getMaxLevel()) {
+                            throw new IllegalArgumentException(
+                                    "Notice exceeds max stock level for new product "
+                                            + input.getManufacturerName() + "/" + input.getModelNumber()
+                                            + ": notice " + input.getQuantity()
+                                            + " > max " + input.getMaxLevel());
                         }
                         if (locationDAO.isLocationOccupied(conn,
                                 input.getLocationLetter(), input.getLocationNumber())) {
@@ -258,10 +288,165 @@ public class InventoryManager {
     }
 
     /*
-     * Option (2): 
+     * Snapshot of a stored shipping notice plus its line items, joined to the
+     * warehouse so manufacturer/model are populated. Used by the CLI to show
+     * a confirmation preview before processing the physical shipment.
      */
-    public void processShipmentArrival() {
+    public static class ShipmentPreview {
+        private final int shippingNoticeId;
+        private final String shippingCompanyName;
+        private final boolean alreadyFulfilled;
+        private final List<LineDetail> lines;
 
+        public ShipmentPreview(int shippingNoticeId, String shippingCompanyName,
+                               boolean alreadyFulfilled, List<LineDetail> lines) {
+            this.shippingNoticeId = shippingNoticeId;
+            this.shippingCompanyName = shippingCompanyName;
+            this.alreadyFulfilled = alreadyFulfilled;
+            this.lines = Collections.unmodifiableList(lines);
+        }
+
+        public int getShippingNoticeId() { return shippingNoticeId; }
+        public String getShippingCompanyName() { return shippingCompanyName; }
+        public boolean isAlreadyFulfilled() { return alreadyFulfilled; }
+        public List<LineDetail> getLines() { return lines; }
+    }
+
+    /*
+     * Per-line outcome of a processed physical shipment - reports stock number,
+     * quantity that was moved into the warehouse, and the resulting on-hand
+     * quantity after the move so the CLI can confirm the new on-hand counts.
+     */
+    public static class AppliedShipmentLine {
+        private final String stockNumber;
+        private final String manufacturerName;
+        private final String modelNumber;
+        private final int quantityReceived;
+        private final int newQuantityOnHand;
+
+        public AppliedShipmentLine(String stockNumber, String manufacturerName, String modelNumber,
+                                   int quantityReceived, int newQuantityOnHand) {
+            this.stockNumber = stockNumber;
+            this.manufacturerName = manufacturerName;
+            this.modelNumber = modelNumber;
+            this.quantityReceived = quantityReceived;
+            this.newQuantityOnHand = newQuantityOnHand;
+        }
+
+        public String getStockNumber() { return stockNumber; }
+        public String getManufacturerName() { return manufacturerName; }
+        public String getModelNumber() { return modelNumber; }
+        public int getQuantityReceived() { return quantityReceived; }
+        public int getNewQuantityOnHand() { return newQuantityOnHand; }
+    }
+
+    /*
+     * Read-only lookup the CLI uses to confirm a shipment before processing it.
+     * Returns null if the notice ID does not exist. The alreadyFulfilled flag
+     * lets the CLI bail out with a clean message before asking for confirmation.
+     */
+    public ShipmentPreview getShipmentPreview(int snid) {
+        try (Connection conn = DatabaseConnection.testConnection()) {
+            ShippingNotice notice = shippingNoticeDAO.findById(conn, snid);
+            if (notice == null) {
+                return null;
+            }
+            boolean fulfilled = shippingNoticeDAO.isFulfilled(conn, snid);
+            List<LineDetail> lines = noticeLineDAO.getLineDetailsForNotice(conn, snid);
+            return new ShipmentPreview(
+                    notice.getShippingNoticeId(),
+                    notice.getShippingCompanyName(),
+                    fulfilled,
+                    lines);
+        }
+        catch (SQLException e) {
+            throw new RuntimeException("DB error while loading shipping notice " + snid + ": "
+                    + e.getMessage(), e);
+        }
+    }
+
+    /*
+     * Option (2): Process a physical shipment for a previously-received shipping
+     * notice. The shipment is assumed to match the notice exactly (no partial /
+     * mismatched fulfillment is modeled).
+     *
+     * For every Notice_Line of the given snid, this transaction does a single
+     * batched MERGE that moves notice_quantity out of replenishment and into
+     * quantity on the matching Warehouse_Item row, then marks the notice
+     * fulfilled. Double-fulfillment is prevented by the conditional UPDATE on
+     * fulfilled='N' inside markFulfilled - if the row had already flipped to
+     * 'Y', no row is updated and we abort.
+     */
+    public List<AppliedShipmentLine> processShipmentArrival(int snid) {
+        try (Connection conn = DatabaseConnection.testConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                ShippingNotice notice = shippingNoticeDAO.findById(conn, snid);
+                if (notice == null) {
+                    throw new IllegalArgumentException("No shipping notice exists for ID " + snid);
+                }
+                if (shippingNoticeDAO.isFulfilled(conn, snid)) {
+                    throw new IllegalArgumentException(
+                            "Shipping notice " + snid + " has already been fulfilled");
+                }
+
+                List<LineDetail> details = noticeLineDAO.getLineDetailsForNotice(conn, snid);
+                if (details.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "Shipping notice " + snid + " has no line items (cannot process empty shipment)");
+                }
+
+                int updated = warehouseItemDAO.applyShipmentForNotice(conn, snid);
+                if (updated != details.size()) {
+                    throw new SQLException("Expected to update " + details.size()
+                            + " warehouse rows for snid " + snid
+                            + " but updated " + updated);
+                }
+
+                if (!shippingNoticeDAO.markFulfilled(conn, snid)) {
+                    // Lost a race: another caller flipped the flag between our isFulfilled() check
+                    // and the markFulfilled UPDATE. Roll back to keep the inventory move atomic
+                    // with the fulfillment flag.
+                    throw new IllegalArgumentException(
+                            "Shipping notice " + snid + " was fulfilled by another transaction");
+                }
+
+                // Re-read the new on-hand quantities so the CLI can echo what changed.
+                Map<String, Integer> newQuantities = new HashMap<>();
+                for (LineDetail d : details) {
+                    Integer q = warehouseItemDAO.getQuantityByStockNumber(conn, d.getStockNumber());
+                    if (q == null) {
+                        throw new SQLException("Could not re-read quantity for " + d.getStockNumber());
+                    }
+                    newQuantities.put(d.getStockNumber(), q);
+                }
+
+                conn.commit();
+
+                List<AppliedShipmentLine> applied = new ArrayList<>();
+                for (LineDetail d : details) {
+                    applied.add(new AppliedShipmentLine(
+                            d.getStockNumber(),
+                            d.getManufacturerName(),
+                            d.getModelNumber(),
+                            d.getNoticeQuantity(),
+                            newQuantities.get(d.getStockNumber())));
+                }
+                return applied;
+            }
+            catch (RuntimeException | SQLException e) {
+                try { conn.rollback(); } catch (SQLException ignore) { /* surfaced below */ }
+                if (e instanceof IllegalArgumentException) {
+                    throw (IllegalArgumentException) e;
+                }
+                throw new RuntimeException("Failed to process shipment arrival for snid " + snid
+                        + ": " + e.getMessage(), e);
+            }
+        }
+        catch (SQLException e) {
+            throw new RuntimeException("DB connection error while processing shipment arrival: "
+                    + e.getMessage(), e);
+        }
     }
 
     /*

@@ -4,10 +4,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
+import eDepot.dao.NoticeLineDAO.LineDetail;
 import eDepot.models.ShippingNotice;
 import eDepot.services.InventoryManager;
+import eDepot.services.InventoryManager.AppliedShipmentLine;
 import eDepot.services.InventoryManager.NoticeLineInput;
 import eDepot.services.InventoryManager.ProcessedLine;
+import eDepot.services.InventoryManager.ShipmentPreview;
 
 public class eDepotCLI {
     private final Scanner scanner;
@@ -208,8 +211,76 @@ public class eDepotCLI {
 
     private void handleReceiveShipment() {
         System.out.println("\n[Transaction: Receive Shipment]");
-        // TODO: Prompt for the prior shipping notice ID
-        // TODO: Pass data to inventoryManager.processShipmentArrival(...)
+        ShipmentPreview preview = null;
+        while (true) {
+            Integer snid = promptNonNegativeInt("Enter Shipping Notice ID: ", true);
+            if (snid == null) {
+                System.out.println("Cancelled.");
+                return;
+            }
+            try {
+                preview = inventoryManager.getShipmentPreview(snid);
+            }
+            catch (RuntimeException e) {
+                System.out.println("Error loading shipping notice: " + e.getMessage());
+                return;
+            }
+
+            if (preview == null) {
+                System.out.println("  No shipping notice exists for ID " + snid + ". Enter a different ID.");
+                continue;
+            }
+            if (preview.isAlreadyFulfilled()) {
+                System.out.println("  Shipping notice " + snid
+                        + " has already been fulfilled - cannot process the same shipment twice.");
+                System.out.println("  Enter a different ID, or leave blank to cancel.");
+                continue;
+            }
+            if (preview.getLines().isEmpty()) {
+                System.out.println("  Shipping notice " + snid + " has no line items - nothing to receive.");
+                return;
+            }
+            break;
+        }
+
+        System.out.println("\n--- Review Incoming Shipment ---");
+        System.out.println("Notice ID: " + preview.getShippingNoticeId());
+        System.out.println("Shipping Company: " + preview.getShippingCompanyName());
+        System.out.println("Lines to receive:");
+        for (LineDetail line : preview.getLines()) {
+            System.out.println("  - " + line.getStockNumber()
+                    + "  " + line.getManufacturerName() + "/" + line.getModelNumber()
+                    + "  qty=" + line.getNoticeQuantity());
+        }
+
+        System.out.print("\nConfirm physical shipment matches notice and apply to inventory? (y/n): ");
+        String confirm = scanner.nextLine().trim();
+        if (!confirm.equalsIgnoreCase("y") && !confirm.equalsIgnoreCase("yes")) {
+            System.out.println("Shipment receipt cancelled. No changes were made.");
+            return;
+        }
+
+        try {
+            List<AppliedShipmentLine> applied = inventoryManager.processShipmentArrival(preview.getShippingNoticeId());
+
+            System.out.println("\nSuccess: Shipment for notice " + preview.getShippingNoticeId()
+                    + " has been received and the notice has been marked fulfilled.");
+            System.out.println("Inventory updates:");
+            for (AppliedShipmentLine line : applied) {
+                System.out.println("  - " + line.getStockNumber()
+                        + "  " + line.getManufacturerName() + "/" + line.getModelNumber()
+                        + "  +" + line.getQuantityReceived()
+                        + "  (on-hand now " + line.getNewQuantityOnHand() + ")");
+            }
+        }
+        catch (IllegalArgumentException e) {
+            System.out.println("Error: " + e.getMessage());
+            System.out.println("No changes were committed.");
+        }
+        catch (RuntimeException e) {
+            System.out.println("Unexpected error: " + e.getMessage());
+            System.out.println("No changes were committed.");
+        }
     }
 
     private void handleCheckItemQuantity() {
@@ -254,10 +325,13 @@ public class eDepotCLI {
         }
     }
 
-    private Integer promptNonNegativeInt(String prompt) {
+    private Integer promptNonNegativeInt(String prompt, boolean allowBlankCancel) {
         while (true) {
             System.out.print(prompt);
             String raw = scanner.nextLine().trim();
+            if (allowBlankCancel && raw.isEmpty()) {
+                return null;
+            }
             try {
                 int value = Integer.parseInt(raw);
                 if (value >= 0) {
