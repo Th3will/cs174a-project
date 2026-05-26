@@ -53,8 +53,10 @@ CREATE TABLE eDepot_Replenishment_Order (
 CREATE TABLE eDepot_Shipping_Notice (
     snid NUMBER(10),
     shipping_company_name VARCHAR2(40),
+    fulfilled CHAR(1) DEFAULT 'N' NOT NULL, -- fulfilled becomes 'Y' when a shipping notice is processed (aka it physically arrives at the warehouse)
 
-    PRIMARY KEY (snid)
+    PRIMARY KEY (snid),
+    CONSTRAINT chk_sn_fulfilled CHECK (fulfilled IN ('Y', 'N'))
 );
 
 CREATE TABLE eDepot_Replenishment_Line (
