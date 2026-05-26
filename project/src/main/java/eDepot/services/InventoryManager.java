@@ -126,6 +126,59 @@ public class InventoryManager {
     }
 
     /*
+     * Snapshot of a stored shipping notice plus its line items, joined to the
+     * warehouse so manufacturer/model are populated. Used by the CLI to show
+     * a confirmation preview before processing the physical shipment.
+     */
+    public static class ShipmentPreview {
+        private final int shippingNoticeId;
+        private final String shippingCompanyName;
+        private final boolean alreadyFulfilled;
+        private final List<LineDetail> lines;
+
+        public ShipmentPreview(int shippingNoticeId, String shippingCompanyName,
+                               boolean alreadyFulfilled, List<LineDetail> lines) {
+            this.shippingNoticeId = shippingNoticeId;
+            this.shippingCompanyName = shippingCompanyName;
+            this.alreadyFulfilled = alreadyFulfilled;
+            this.lines = Collections.unmodifiableList(lines);
+        }
+
+        public int getShippingNoticeId() { return shippingNoticeId; }
+        public String getShippingCompanyName() { return shippingCompanyName; }
+        public boolean isAlreadyFulfilled() { return alreadyFulfilled; }
+        public List<LineDetail> getLines() { return lines; }
+    }
+
+    /*
+     * Per-line outcome of a processed physical shipment - reports stock number,
+     * quantity that was moved into the warehouse, and the resulting on-hand
+     * quantity after the move so the CLI can confirm the new on-hand counts.
+     */
+    public static class AppliedShipmentLine {
+        private final String stockNumber;
+        private final String manufacturerName;
+        private final String modelNumber;
+        private final int quantityReceived;
+        private final int newQuantityOnHand;
+
+        public AppliedShipmentLine(String stockNumber, String manufacturerName, String modelNumber,
+                                   int quantityReceived, int newQuantityOnHand) {
+            this.stockNumber = stockNumber;
+            this.manufacturerName = manufacturerName;
+            this.modelNumber = modelNumber;
+            this.quantityReceived = quantityReceived;
+            this.newQuantityOnHand = newQuantityOnHand;
+        }
+
+        public String getStockNumber() { return stockNumber; }
+        public String getManufacturerName() { return manufacturerName; }
+        public String getModelNumber() { return modelNumber; }
+        public int getQuantityReceived() { return quantityReceived; }
+        public int getNewQuantityOnHand() { return newQuantityOnHand; }
+    }
+
+    /*
      * Option (1): Process a received shipping notice end-to-end inside one DB transaction.
      *
      * For each line: if (manufacturer, model_num) already exists in the
@@ -288,84 +341,6 @@ public class InventoryManager {
     }
 
     /*
-     * Snapshot of a stored shipping notice plus its line items, joined to the
-     * warehouse so manufacturer/model are populated. Used by the CLI to show
-     * a confirmation preview before processing the physical shipment.
-     */
-    public static class ShipmentPreview {
-        private final int shippingNoticeId;
-        private final String shippingCompanyName;
-        private final boolean alreadyFulfilled;
-        private final List<LineDetail> lines;
-
-        public ShipmentPreview(int shippingNoticeId, String shippingCompanyName,
-                               boolean alreadyFulfilled, List<LineDetail> lines) {
-            this.shippingNoticeId = shippingNoticeId;
-            this.shippingCompanyName = shippingCompanyName;
-            this.alreadyFulfilled = alreadyFulfilled;
-            this.lines = Collections.unmodifiableList(lines);
-        }
-
-        public int getShippingNoticeId() { return shippingNoticeId; }
-        public String getShippingCompanyName() { return shippingCompanyName; }
-        public boolean isAlreadyFulfilled() { return alreadyFulfilled; }
-        public List<LineDetail> getLines() { return lines; }
-    }
-
-    /*
-     * Per-line outcome of a processed physical shipment - reports stock number,
-     * quantity that was moved into the warehouse, and the resulting on-hand
-     * quantity after the move so the CLI can confirm the new on-hand counts.
-     */
-    public static class AppliedShipmentLine {
-        private final String stockNumber;
-        private final String manufacturerName;
-        private final String modelNumber;
-        private final int quantityReceived;
-        private final int newQuantityOnHand;
-
-        public AppliedShipmentLine(String stockNumber, String manufacturerName, String modelNumber,
-                                   int quantityReceived, int newQuantityOnHand) {
-            this.stockNumber = stockNumber;
-            this.manufacturerName = manufacturerName;
-            this.modelNumber = modelNumber;
-            this.quantityReceived = quantityReceived;
-            this.newQuantityOnHand = newQuantityOnHand;
-        }
-
-        public String getStockNumber() { return stockNumber; }
-        public String getManufacturerName() { return manufacturerName; }
-        public String getModelNumber() { return modelNumber; }
-        public int getQuantityReceived() { return quantityReceived; }
-        public int getNewQuantityOnHand() { return newQuantityOnHand; }
-    }
-
-    /*
-     * Read-only lookup the CLI uses to confirm a shipment before processing it.
-     * Returns null if the notice ID does not exist. The alreadyFulfilled flag
-     * lets the CLI bail out with a clean message before asking for confirmation.
-     */
-    public ShipmentPreview getShipmentPreview(int snid) {
-        try (Connection conn = DatabaseConnection.testConnection()) {
-            ShippingNotice notice = shippingNoticeDAO.findById(conn, snid);
-            if (notice == null) {
-                return null;
-            }
-            boolean fulfilled = shippingNoticeDAO.isFulfilled(conn, snid);
-            List<LineDetail> lines = noticeLineDAO.getLineDetailsForNotice(conn, snid);
-            return new ShipmentPreview(
-                    notice.getShippingNoticeId(),
-                    notice.getShippingCompanyName(),
-                    fulfilled,
-                    lines);
-        }
-        catch (SQLException e) {
-            throw new RuntimeException("DB error while loading shipping notice " + snid + ": "
-                    + e.getMessage(), e);
-        }
-    }
-
-    /*
      * Option (2): Process a physical shipment for a previously-received shipping
      * notice. The shipment is assumed to match the notice exactly (no partial /
      * mismatched fulfillment is modeled).
@@ -450,7 +425,7 @@ public class InventoryManager {
     }
 
     /*
-     * Option (3): 
+     * Option (3): check an item's quantity based off of its stock number; simply queries Warehouse_Item table
      */
     public int checkItemQuantity(String stockNum) {
         if (stockNum == null || !stockNum.matches("^[A-Z]{2}[0-9]{5}$")) {
@@ -466,7 +441,7 @@ public class InventoryManager {
     }
 
     /*
-     * Option (4): 
+     * Option (4): fill an order from eMart
      */
     public void fillOrder() {
         
@@ -537,6 +512,31 @@ public class InventoryManager {
             return locationDAO.isLocationOccupied(conn, letter, number);
         } catch (SQLException e) {
             throw new RuntimeException("DB error while checking location: " + e.getMessage(), e);
+        }
+    }
+
+    /*
+     * Read-only lookup the CLI uses to confirm a shipment before processing it.
+     * Returns null if the notice ID does not exist. The alreadyFulfilled flag
+     * lets the CLI bail out with a clean message before asking for confirmation.
+     */
+    public ShipmentPreview getShipmentPreview(int snid) {
+        try (Connection conn = DatabaseConnection.testConnection()) {
+            ShippingNotice notice = shippingNoticeDAO.findById(conn, snid);
+            if (notice == null) {
+                return null;
+            }
+            boolean fulfilled = shippingNoticeDAO.isFulfilled(conn, snid);
+            List<LineDetail> lines = noticeLineDAO.getLineDetailsForNotice(conn, snid);
+            return new ShipmentPreview(
+                    notice.getShippingNoticeId(),
+                    notice.getShippingCompanyName(),
+                    fulfilled,
+                    lines);
+        }
+        catch (SQLException e) {
+            throw new RuntimeException("DB error while loading shipping notice " + snid + ": "
+                    + e.getMessage(), e);
         }
     }
 }
