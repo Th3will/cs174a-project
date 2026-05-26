@@ -60,4 +60,52 @@ public class NoticeLineDAO {
         }
         return noticeLines;
     }
+
+    /*
+     * Notice lines joined with the corresponding warehouse item so the CLI
+     * can preview an incoming shipment without making the operator retype
+     * anything. Ordered by stock number for deterministic display.
+     */
+    public static class LineDetail {
+        private final String stockNumber;
+        private final String manufacturerName;
+        private final String modelNumber;
+        private final int noticeQuantity;
+
+        public LineDetail(String stockNumber, String manufacturerName, String modelNumber, int noticeQuantity) {
+            this.stockNumber = stockNumber;
+            this.manufacturerName = manufacturerName;
+            this.modelNumber = modelNumber;
+            this.noticeQuantity = noticeQuantity;
+        }
+
+        public String getStockNumber() { return stockNumber; }
+        public String getManufacturerName() { return manufacturerName; }
+        public String getModelNumber() { return modelNumber; }
+        public int getNoticeQuantity() { return noticeQuantity; }
+    }
+
+    public List<LineDetail> getLineDetailsForNotice(Connection conn, int snid) throws SQLException {
+        String sql =
+                "SELECT nl.stock_num, wi.mname, wi.model_num, nl.notice_quantity " +
+                "FROM eDepot_Notice_Line nl " +
+                "JOIN eDepot_Warehouse_Item wi ON nl.stock_num = wi.stock_num " +
+                "WHERE nl.snid = ? " +
+                "ORDER BY nl.stock_num";
+
+        List<LineDetail> details = new ArrayList<>();
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, snid);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    details.add(new LineDetail(
+                            rs.getString("stock_num"),
+                            rs.getString("mname"),
+                            rs.getString("model_num"),
+                            rs.getInt("notice_quantity")));
+                }
+            }
+        }
+        return details;
+    }
 }

@@ -107,6 +107,56 @@ public class WarehouseItemDAO {
         }
     }
 
+    public WarehouseItem findByStockNumber(Connection conn, String stockNumber) throws SQLException {
+        String sql = "SELECT stock_num, mname, model_num, quantity, min_level, max_level, " +
+                "replenishment, loc_letter, loc_num " +
+                "FROM eDepot_Warehouse_Item WHERE stock_num = ?";
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, stockNumber);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (!rs.next()) {
+                    return null;
+                }
+                return new WarehouseItem(
+                        rs.getString("stock_num"),
+                        rs.getString("mname"),
+                        rs.getString("model_num"),
+                        rs.getInt("quantity"),
+                        rs.getInt("min_level"),
+                        rs.getInt("max_level"),
+                        rs.getInt("replenishment"),
+                        rs.getString("loc_letter"),
+                        rs.getInt("loc_num"));
+            }
+        }
+    }
+
+    /*
+     * Apply a received physical shipment in one SQL roundtrip: for every line
+     * of the given shipping notice, move the notice_quantity out of
+     * replenishment and into quantity on its warehouse item. Returns the
+     * number of rows updated (one per distinct stock number on the notice).
+     *
+     * The chk_qty_limit and chk_wi_replenish CHECK constraints in the schema
+     * will roll the MERGE back if the move would push quantity past max_level
+     * or replenishment below 0, so the caller does not need to pre-validate.
+     */
+    public int applyShipmentForNotice(Connection conn, int snid) throws SQLException {
+        String sql =
+                "MERGE INTO eDepot_Warehouse_Item wi " +
+                "USING (SELECT stock_num, notice_quantity FROM eDepot_Notice_Line WHERE snid = ?) nl " +
+                "ON (wi.stock_num = nl.stock_num) " +
+                "WHEN MATCHED THEN UPDATE SET " +
+                "    wi.quantity = wi.quantity + nl.notice_quantity, " +
+                "    wi.replenishment = wi.replenishment - nl.notice_quantity";
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, snid);
+            return pstmt.executeUpdate();
+        }
+    }
+
     /*
      * Generate the next available stock number in the XXnnnnn format.
      * Strategy: take the lexicographic MAX, increment the 5-digit suffix; if the
