@@ -13,25 +13,24 @@ import java.util.ArrayList;
 
 public class NoticeLineDAO {
     public boolean insertNoticeLine(NoticeLine line) {
-        String sql = "INSERT INTO eDepot_Notice_Line (snid, stock_num, notice_quantity) VALUES (?, ?, ?)";
-
-        try (Connection conn = DatabaseConnection.testConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-            pstmt.setInt(1, line.getShippingNoticeId());
-            pstmt.setString(2, line.getStockNumber());
-            pstmt.setInt(3, line.getNoticeQuantity());
-
-            int rowsAffected = pstmt.executeUpdate();
-            if (rowsAffected > 0) {
-                System.out.println("Success: Notice line for shipping notice " + line.getShippingNoticeId() + " inserted");
-                return true;
-            }
+        try (Connection conn = DatabaseConnection.testConnection()) {
+            return insertNoticeLine(conn, line);
         }
         catch (SQLException e) {
             System.err.println("DB error while inserting notice line: " + e.getMessage());
+            return false;
         }
-        return false;
+    }
+
+    public boolean insertNoticeLine(Connection conn, NoticeLine line) throws SQLException {
+        String sql = "INSERT INTO eDepot_Notice_Line (snid, stock_num, notice_quantity) VALUES (?, ?, ?)";
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, line.getShippingNoticeId());
+            pstmt.setString(2, line.getStockNumber());
+            pstmt.setInt(3, line.getNoticeQuantity());
+            return pstmt.executeUpdate() > 0;
+        }
     }
 
     // return all rows in a shipping notice that correspond to a specific shipping notice ID
