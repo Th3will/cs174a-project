@@ -190,9 +190,9 @@ public class Customer_Interface {
             public Screen execute(String input) {
                 Utility.clearConsole();
                 System.out.println("=== Search Filters ===");
-                System.out.println("1. Filter by Category");
+                System.out.println("1. Filter by Stock Number");
                 System.out.println("2. Filter by Manufacturer");
-                System.out.println("3. Filter by Max Price");
+                System.out.println("3. Filter by Category");
                 System.out.println("4. Filter by Attribute (Name and Value)");
                 System.out.println("5. Filter by Compatibility (Items that can replace target stock#)");
                 System.out.println("6. Cancel");
@@ -208,48 +208,80 @@ public class Customer_Interface {
                 String description = null;
                 
                 if (choice.equals("1")) {
+                    String stockNum = UIHelpers.promptString("Enter Stock Number (leave empty to cancel): ");
+                    if (stockNum.isEmpty()) return ItemListScreen.this;
+                    chosenWhere = "stock_num = ?";
+                    chosenParams.add(stockNum);
+                    description = "stock_num: " + stockNum;
+                } else if (choice.equals("2")) {
+                    String val = UIHelpers.promptString("Enter Manufacturer name (leave empty to cancel): ");
+                    if (val.isEmpty()) return ItemListScreen.this;
+                    String model = UIHelpers.promptString("Enter Model Number (leave empty to ignore): ");
+                    if (model.isEmpty()) {
+                        chosenWhere = "mname = ?";
+                        chosenParams.add(val);
+                        description = "Manufacturer: " + val;
+                    } else {
+                        chosenWhere = "mname = ? AND model_num = ?";
+                        chosenParams.add(val);
+                        chosenParams.add(model);
+                        description = "Manufacturer: " + val + ", Model: " + model;
+                    }
+                } else if (choice.equals("3")) {
                     String val = UIHelpers.promptString("Enter Category (leave empty to cancel): ");
                     if (val.isEmpty()) return ItemListScreen.this;
                     chosenWhere = "category = ?";
                     chosenParams.add(val);
                     description = "Category: " + val;
-                } else if (choice.equals("2")) {
-                    String val = UIHelpers.promptString("Enter Manufacturer name (leave empty to cancel): ");
-                    if (val.isEmpty()) return ItemListScreen.this;
-                    chosenWhere = "mname = ?";
-                    chosenParams.add(val);
-                    description = "Manufacturer: " + val;
-                } else if (choice.equals("3")) {
-                    String priceStr = UIHelpers.promptString("Enter Maximum Price (leave empty to cancel): ");
-                    if (priceStr.isEmpty()) return ItemListScreen.this;
-                    double maxVal = 0.0;
-                    try {
-                        maxVal = Double.parseDouble(priceStr);
-                    } catch (NumberFormatException e) {
-                        System.out.println("Invalid price.");
-                        UIHelpers.sleep(1000);
-                        return ItemListScreen.this;
-                    }
-                    chosenWhere = "price <= ?";
-                    chosenParams.add(maxVal);
-                    description = "Max Price: " + maxVal;
                 } else if (choice.equals("4")) {
                     String name = UIHelpers.promptString("Enter Attribute Name (leave empty to cancel): ");
                     if (name.isEmpty()) return ItemListScreen.this;
-                    String valStr = UIHelpers.promptString("Enter Attribute Value (leave empty to cancel): ");
-                    if (valStr.isEmpty()) return ItemListScreen.this;
-                    double val = 0.0;
-                    try {
-                        val = Double.parseDouble(valStr);
-                    } catch (NumberFormatException e) {
-                        System.out.println("Invalid numeric value.");
+                    
+                    String valStr = UIHelpers.promptString("Enter Attribute Value (leave empty for NULL): ");
+                    String unitStr = UIHelpers.promptString("Enter Attribute Unit (leave empty for NULL): ");
+                    
+                    if (valStr.isEmpty() && unitStr.isEmpty()) {
+                        System.out.println("Both Value and Unit cannot be NULL. Filter cancelled.");
                         UIHelpers.sleep(1000);
                         return ItemListScreen.this;
                     }
-                    chosenWhere = "stock_num IN (SELECT stock_num FROM item_attribute WHERE attr_name = ? AND attr_value = ?)";
-                    chosenParams.add(name);
-                    chosenParams.add(val);
-                    description = "Attribute (" + name + "): " + valStr;
+                    
+                    if (valStr.isEmpty()) {
+                        // Value is NULL, Unit is non-NULL
+                        chosenWhere = "stock_num IN (SELECT stock_num FROM item_attribute WHERE attr_name = ? AND attr_value IS NULL AND attr_unit = ?)";
+                        chosenParams.add(name);
+                        chosenParams.add(unitStr);
+                        description = "Attribute (" + name + "): NULL value, Unit: " + unitStr;
+                    } else if (unitStr.isEmpty()) {
+                        // Value is non-NULL, Unit is NULL
+                        double val = 0.0;
+                        try {
+                            val = Double.parseDouble(valStr);
+                        } catch (NumberFormatException e) {
+                            System.out.println("Invalid numeric value.");
+                            UIHelpers.sleep(500);
+                            return ItemListScreen.this;
+                        }
+                        chosenWhere = "stock_num IN (SELECT stock_num FROM item_attribute WHERE attr_name = ? AND attr_value = ? AND attr_unit IS NULL)";
+                        chosenParams.add(name);
+                        chosenParams.add(val);
+                        description = "Attribute (" + name + "): " + valStr + ", Unit: NULL";
+                    } else {
+                        // Both are non-NULL
+                        double val = 0.0;
+                        try {
+                            val = Double.parseDouble(valStr);
+                        } catch (NumberFormatException e) {
+                            System.out.println("Invalid numeric value.");
+                            UIHelpers.sleep(500);
+                            return ItemListScreen.this;
+                        }
+                        chosenWhere = "stock_num IN (SELECT stock_num FROM item_attribute WHERE attr_name = ? AND attr_value = ? AND attr_unit = ?)";
+                        chosenParams.add(name);
+                        chosenParams.add(val);
+                        chosenParams.add(unitStr);
+                        description = "Attribute (" + name + "): " + valStr + " " + unitStr;
+                    }
                 } else if (choice.equals("5")) {
                     String stock = UIHelpers.promptString("Enter Target Stock Number (leave empty to cancel): ");
                     if (stock.isEmpty()) return ItemListScreen.this;
@@ -258,7 +290,7 @@ public class Customer_Interface {
                     description = "Compatible with: " + stock;
                 } else {
                     System.out.println("Invalid selection.");
-                    UIHelpers.sleep(1000);
+                    UIHelpers.sleep(500);
                     return ItemListScreen.this;
                 }
                 
@@ -333,7 +365,7 @@ public class Customer_Interface {
                 
                 String choice = UIHelpers.promptString("Add this item to cart? (y/n): ");
                 if (choice.equalsIgnoreCase("y")) {
-                    int qty = UIHelpers.promptInt("Enter quantity: ");
+                    int qty = UIHelpers.promptInt("Enter quantity (new valid quantity will reset any existing quantity for this stock number): ");
                     if (qty <= 0) {
                         System.out.println("Quantity must be greater than 0.");
                         UIHelpers.waitForEnter();
@@ -445,6 +477,7 @@ public class Customer_Interface {
                 return parent;
             }
             
+            // print itemized order
             double subtotal = 0.0;
             System.out.println(String.format("%-10s | %-15s | %-12s | %-8s | %-10s", "Stock#", "Manufacturer", "Model", "Qty", "Subtotal"));
             System.out.println("-----------------------------------------------------------------");
@@ -472,7 +505,7 @@ public class Customer_Interface {
             }
             
             System.out.println("-----------------------------------------------------------------");
-            
+            // get status and calculate final price
             String level = getFreshLevelName();
             StatusRules rules;
             try {
@@ -483,6 +516,7 @@ public class Customer_Interface {
                 return parent;
             }
             
+            // calculated shipping fee is after discount
             double discountVal = subtotal * (rules.discountRate / 100.0);
             double discountedSub = subtotal - discountVal;
             
@@ -569,6 +603,7 @@ public class Customer_Interface {
                 martConn.setAutoCommit(false);
                 depotConn.setAutoCommit(false);
                 
+                // check if the desired quantity still exists in case another customer checks out before them
                 for (Map.Entry<String, Integer> entry : customer.cart.getItems().entrySet()) {
                     String stock = entry.getKey();
                     int qty = entry.getValue();
@@ -591,7 +626,7 @@ public class Customer_Interface {
                         return;
                     }
                 }
-                
+                // generate order number
                 int orderNum = 1;
                 String ordNumSql = "SELECT COALESCE(MAX(ord_num), 0) + 1 AS next_val FROM order_table";
                 try (Statement stmt = martConn.createStatement();
@@ -633,18 +668,18 @@ public class Customer_Interface {
                         pstmt.executeUpdate();
                     }
                     
-                    String decStockSql = "UPDATE eDepot_Warehouse_Item SET quantity = quantity - ? WHERE stock_num = ?";
-                    try (PreparedStatement pstmt = depotConn.prepareStatement(decStockSql)) {
-                        pstmt.setInt(1, qty);
-                        pstmt.setString(2, stock);
-                        pstmt.executeUpdate();
-                    }
+                    // String decStockSql = "UPDATE eDepot_Warehouse_Item SET quantity = quantity - ? WHERE stock_num = ?";
+                    // try (PreparedStatement pstmt = depotConn.prepareStatement(decStockSql)) {
+                    //     pstmt.setInt(1, qty);
+                    //     pstmt.setString(2, stock);
+                    //     pstmt.executeUpdate();
+                    // }
                     
-                    checkAndTriggerReplenishment(stock);
+                    // checkAndTriggerReplenishment(stock);
                 }
                 
                 martConn.commit();
-                depotConn.commit();
+                // depotConn.commit();
                 
                 System.out.println("Checkout successful!");
                 System.out.println("Your Order Number: " + orderNum);
@@ -673,104 +708,115 @@ public class Customer_Interface {
             }
         }
 
-        private void checkAndTriggerReplenishment(String stockNum) throws SQLException {
-            String mname = null;
-            int quantity = 0;
-            int minLevel = 0;
-            String wiSql = "SELECT mname, quantity, min_level FROM eDepot_Warehouse_Item WHERE stock_num = ?";
-            try (PreparedStatement pstmt = depotConn.prepareStatement(wiSql)) {
-                pstmt.setString(1, stockNum);
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        mname = rs.getString("mname");
-                        quantity = rs.getInt("quantity");
-                        minLevel = rs.getInt("min_level");
-                    }
-                }
-            }
+        // private void checkAndTriggerReplenishment(String stockNum) throws SQLException {
+        //     String mname = null;
+        //     int quantity = 0;
+        //     int minLevel = 0;
+        //     String wiSql = "SELECT mname, quantity, min_level FROM eDepot_Warehouse_Item WHERE stock_num = ?";
+        //     try (PreparedStatement pstmt = depotConn.prepareStatement(wiSql)) {
+        //         pstmt.setString(1, stockNum);
+        //         try (ResultSet rs = pstmt.executeQuery()) {
+        //             if (rs.next()) {
+        //                 mname = rs.getString("mname");
+        //                 quantity = rs.getInt("quantity");
+        //                 minLevel = rs.getInt("min_level");
+        //             }
+        //         }
+        //     }
             
-            if (mname == null) return;
+        //     if (mname == null) return;
             
-            if (quantity < minLevel) {
-                int belowMinCount = 0;
-                String countSql = "SELECT COUNT(*) AS count_val FROM eDepot_Warehouse_Item WHERE mname = ? AND quantity < min_level";
-                try (PreparedStatement pstmt = depotConn.prepareStatement(countSql)) {
-                    pstmt.setString(1, mname);
-                    try (ResultSet rs = pstmt.executeQuery()) {
-                        if (rs.next()) {
-                            belowMinCount = rs.getInt("count_val");
-                        }
-                    }
-                }
+        //     if (quantity < minLevel) {
+        //         int belowMinCount = 0;
+        //         String countSql = "SELECT COUNT(*) AS count_val FROM eDepot_Warehouse_Item WHERE mname = ? AND quantity < min_level";
+        //         try (PreparedStatement pstmt = depotConn.prepareStatement(countSql)) {
+        //             pstmt.setString(1, mname);
+        //             try (ResultSet rs = pstmt.executeQuery()) {
+        //                 if (rs.next()) {
+        //                     belowMinCount = rs.getInt("count_val");
+        //                 }
+        //             }
+        //         }
                 
-                if (belowMinCount >= 3) {
-                    System.out.println("\n[DEPOT NOTICE] >= 3 items below min_level for manufacturer '" + mname + "'. Triggering replenishment order...");
+        //         if (belowMinCount >= 3) {
+        //             System.out.println("\n[DEPOT NOTICE] >= 3 items below min_level for manufacturer '" + mname + "'. Triggering replenishment order...");
                     
-                    int nextOid = 1;
-                    String oidSql = "SELECT COALESCE(MAX(oid), 0) + 1 AS next_val FROM eDepot_Replenishment_Order";
-                    try (Statement stmt = depotConn.createStatement();
-                         ResultSet rs = stmt.executeQuery(oidSql)) {
-                        if (rs.next()) {
-                            nextOid = rs.getInt("next_val");
-                        }
-                    }
+        //             int nextOid = 1;
+        //             String oidSql = "SELECT COALESCE(MAX(oid), 0) + 1 AS next_val FROM eDepot_Replenishment_Order";
+        //             try (Statement stmt = depotConn.createStatement();
+        //                  ResultSet rs = stmt.executeQuery(oidSql)) {
+        //                 if (rs.next()) {
+        //                     nextOid = rs.getInt("next_val");
+        //                 }
+        //             }
                     
-                    String insRepSql = "INSERT INTO eDepot_Replenishment_Order (oid, mname) VALUES (?, ?)";
-                    try (PreparedStatement pstmt = depotConn.prepareStatement(insRepSql)) {
-                        pstmt.setInt(1, nextOid);
-                        pstmt.setString(2, mname);
-                        pstmt.executeUpdate();
-                    }
+        //             String insRepSql = "INSERT INTO eDepot_Replenishment_Order (oid, mname) VALUES (?, ?)";
+        //             try (PreparedStatement pstmt = depotConn.prepareStatement(insRepSql)) {
+        //                 pstmt.setInt(1, nextOid);
+        //                 pstmt.setString(2, mname);
+        //                 pstmt.executeUpdate();
+        //             }
                     
-                    String fetchWI = "SELECT stock_num, quantity, max_level FROM eDepot_Warehouse_Item WHERE mname = ? AND quantity < max_level";
-                    try (PreparedStatement pstmt = depotConn.prepareStatement(fetchWI)) {
-                        pstmt.setString(1, mname);
-                        try (ResultSet rs = pstmt.executeQuery()) {
-                            while (rs.next()) {
-                                String repStock = rs.getString("stock_num");
-                                int currentQty = rs.getInt("quantity");
-                                int maxLvl = rs.getInt("max_level");
-                                int repQty = maxLvl - currentQty;
+        //             String fetchWI = "SELECT stock_num, quantity, max_level FROM eDepot_Warehouse_Item WHERE mname = ? AND quantity < max_level";
+        //             try (PreparedStatement pstmt = depotConn.prepareStatement(fetchWI)) {
+        //                 pstmt.setString(1, mname);
+        //                 try (ResultSet rs = pstmt.executeQuery()) {
+        //                     while (rs.next()) {
+        //                         String repStock = rs.getString("stock_num");
+        //                         int currentQty = rs.getInt("quantity");
+        //                         int maxLvl = rs.getInt("max_level");
+        //                         int repQty = maxLvl - currentQty;
                                 
-                                String insRepLineSql = "INSERT INTO eDepot_Replenishment_Line (oid, stock_num, replenishment_quantity) VALUES (?, ?, ?)";
-                                try (PreparedStatement pstmt2 = depotConn.prepareStatement(insRepLineSql)) {
-                                    pstmt2.setInt(1, nextOid);
-                                    pstmt2.setString(2, repStock);
-                                    pstmt2.setInt(3, repQty);
-                                    pstmt2.executeUpdate();
-                                }
+        //                         String insRepLineSql = "INSERT INTO eDepot_Replenishment_Line (oid, stock_num, replenishment_quantity) VALUES (?, ?, ?)";
+        //                         try (PreparedStatement pstmt2 = depotConn.prepareStatement(insRepLineSql)) {
+        //                             pstmt2.setInt(1, nextOid);
+        //                             pstmt2.setString(2, repStock);
+        //                             pstmt2.setInt(3, repQty);
+        //                             pstmt2.executeUpdate();
+        //                         }
                                 
-                                System.out.println(" -> Ordered replenishment quantity of " + repQty + " for stock number " + repStock);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        //                         System.out.println(" -> Ordered replenishment quantity of " + repQty + " for stock number " + repStock);
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
 
         private void recalculateCustomerStatus() throws SQLException {
             double sumTotal = 0.0;
-            int purchasesCount = 0;
-            String queryHistory = "SELECT total FROM (SELECT total FROM order_table WHERE cid = ? ORDER BY order_date DESC, ord_num DESC) WHERE ROWNUM <= 3";
+            String queryHistory = "SELECT total " +
+                                  "FROM (" +
+                                  "    SELECT total " +
+                                  "    FROM order_table " +
+                                  "    WHERE cid = ? " +
+                                  "    ORDER BY order_date DESC, ord_num DESC" +
+                                  ") " +
+                                  "WHERE ROWNUM <= 3";
             try (PreparedStatement pstmt = martConn.prepareStatement(queryHistory)) {
                 pstmt.setString(1, customer.get_cid());
                 try (ResultSet rs = pstmt.executeQuery()) {
                     while (rs.next()) {
                         sumTotal += rs.getDouble("total");
-                        purchasesCount++;
                     }
                 }
             }
             
-            String newLevel;
-            if (purchasesCount == 0) {
-                newLevel = "New";
-            } else if (sumTotal > 500.0) {
-                newLevel = "Gold";
-            } else if (sumTotal > 100.0) {
-                newLevel = "Silver";
-            } else {
-                newLevel = "Green";
+            String newLevel = "Green"; // default fallback
+            String sql = "SELECT level_name, upgrade_threshold " +
+                         "FROM status " +
+                         "WHERE level_name != 'New' " +
+                         "ORDER BY upgrade_threshold DESC";
+            try (Statement stmt = martConn.createStatement();
+                 ResultSet rs = stmt.executeQuery(sql)) {
+                while (rs.next()) {
+                    String lvl = rs.getString("level_name");
+                    double req = rs.getDouble("upgrade_threshold");
+                    if (sumTotal > req) {
+                        newLevel = lvl;
+                        break;
+                    }
+                }
             }
             
             String updateSql = "UPDATE customer SET level_name = ? WHERE cid = ?";

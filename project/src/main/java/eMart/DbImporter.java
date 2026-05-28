@@ -55,39 +55,46 @@ public class DbImporter {
         }
         
         double threshold = 100.0;
+        double upgradeThreshold = 0.0;
         double shippingFee = 10.0;
         double discount = 0.0;
 
         if (levelName.equalsIgnoreCase("Gold")) {
+            upgradeThreshold = 500.0;
             discount = 10.0;
         } else if (levelName.equalsIgnoreCase("Silver")) {
+            upgradeThreshold = 100.0;
             discount = 5.0;
         } else if (levelName.equalsIgnoreCase("Green")) {
+            upgradeThreshold = 0.0;
             discount = 0.0;
         } else if (levelName.equalsIgnoreCase("New")) {
             threshold = 0.0;
+            upgradeThreshold = 0.0;
             shippingFee = 0.0;
             discount = 10.0;
         }
 
         if (recordExists(conn, "status", "level_name", levelName)) {
-            String updateQuery = "UPDATE status SET threshold = ?, shipping_fee = ?, discount = ? WHERE level_name = ?";
+            String updateQuery = "UPDATE status SET threshold = ?, upgrade_threshold = ?, shipping_fee = ?, discount = ? WHERE level_name = ?";
             try (PreparedStatement stmt = conn.prepareStatement(updateQuery)) {
                 stmt.setDouble(1, threshold);
-                stmt.setDouble(2, shippingFee);
-                stmt.setDouble(3, discount);
-                stmt.setString(4, levelName);
+                stmt.setDouble(2, upgradeThreshold);
+                stmt.setDouble(3, shippingFee);
+                stmt.setDouble(4, discount);
+                stmt.setString(5, levelName);
                 stmt.executeUpdate();
             }
             return;
         }
 
-        String insertQuery = "INSERT INTO status (level_name, threshold, shipping_fee, discount) VALUES (?, ?, ?, ?)";
+        String insertQuery = "INSERT INTO status (level_name, threshold, upgrade_threshold, shipping_fee, discount) VALUES (?, ?, ?, ?, ?)";
         try (PreparedStatement stmt = conn.prepareStatement(insertQuery)) {
             stmt.setString(1, levelName);
             stmt.setDouble(2, threshold);
-            stmt.setDouble(3, shippingFee);
-            stmt.setDouble(4, discount);
+            stmt.setDouble(3, upgradeThreshold);
+            stmt.setDouble(4, shippingFee);
+            stmt.setDouble(5, discount);
             stmt.executeUpdate();
         }
     }

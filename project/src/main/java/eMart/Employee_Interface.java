@@ -105,7 +105,8 @@ public class Employee_Interface {
             System.out.println("3. Monthly Sales Summary Reports");
             System.out.println("4. Adjust Product Price");
             System.out.println("5. Cleanup Old Sales Transactions");
-            System.out.println("6. Logout");
+            System.out.println("6. Send out a supply order to manufacturer");
+            System.out.println("7. Logout");
             System.out.println("=========================================");
             
             String choice = UIHelpers.promptString("Enter choice: ");
@@ -123,6 +124,9 @@ public class Employee_Interface {
                 System.out.println("Logging out...");
                 UIHelpers.sleep(800);
                 return parent;
+            // TODO: add in manufacturer order
+            } else if (choice.equals("7")) {
+                return new ManufacturerOrderScreen(martConn, depotConn, this);
             } else {
                 System.out.println("Invalid choice. Please try again.");
                 UIHelpers.sleep(1000);
@@ -143,12 +147,14 @@ public class Employee_Interface {
         private static class StatusRecord {
             String levelName;
             double threshold;
+            double upgradeThreshold;
             double shippingFee;
             double discount;
 
-            public StatusRecord(String levelName, double threshold, double shippingFee, double discount) {
+            public StatusRecord(String levelName, double threshold, double upgradeThreshold, double shippingFee, double discount) {
                 this.levelName = levelName;
                 this.threshold = threshold;
+                this.upgradeThreshold = upgradeThreshold;
                 this.shippingFee = shippingFee;
                 this.discount = discount;
             }
@@ -158,13 +164,14 @@ public class Employee_Interface {
         public Screen run() {
             PageProvider<StatusRecord> provider = (pageNumber, pageSize) -> {
                 List<StatusRecord> list = new ArrayList<>();
-                String sql = "SELECT level_name, threshold, shipping_fee, discount FROM status ORDER BY level_name";
+                String sql = "SELECT level_name, threshold, upgrade_threshold, shipping_fee, discount FROM status ORDER BY level_name";
                 try (Statement stmt = conn.createStatement();
                      ResultSet rs = stmt.executeQuery(sql)) {
                     while (rs.next()) {
                         list.add(new StatusRecord(
                             rs.getString("level_name"),
                             rs.getDouble("threshold"),
+                            rs.getDouble("upgrade_threshold"),
                             rs.getDouble("shipping_fee"),
                             rs.getDouble("discount")
                         ));
@@ -174,25 +181,28 @@ public class Employee_Interface {
             };
 
             Consumer<StatusRecord> displayer = s -> 
-                System.out.println(s.levelName + " Status | Shipping Waiver Threshold: $" + s.threshold + " | Shipping Fee: " + s.shippingFee + "% | Discount: " + s.discount + "%");
+                System.out.println(s.levelName + " Status | Shipping Waiver Threshold: $" + s.threshold + " | Upgrade Threshold: $" + s.upgradeThreshold + " | Shipping Fee: " + s.shippingFee + "% | Discount: " + s.discount + "%");
 
             EntityListing.EntitySelectionHandler<StatusRecord> selection = (record, currentListing) -> {
                 Utility.clearConsole();
                 System.out.println("=== Adjust Rules for: " + record.levelName + " ===");
                 System.out.println("(Press Enter on all fields to cancel)");
                 String thresholdStr = UIHelpers.promptString("Enter new shipping waiver threshold ($): ");
+                String upgradeThresholdStr = UIHelpers.promptString("Enter new upgrade threshold ($): ");
                 String shippingFeeStr = UIHelpers.promptString("Enter new shipping fee rate (%): ");
                 String discountStr = UIHelpers.promptString("Enter new discount rate (%): ");
                 
-                if (thresholdStr.isEmpty() && shippingFeeStr.isEmpty() && discountStr.isEmpty()) {
+                if (thresholdStr.isEmpty() && upgradeThresholdStr.isEmpty() && shippingFeeStr.isEmpty() && discountStr.isEmpty()) {
                     return currentListing;
                 }
                 
                 double threshold = record.threshold;
+                double upgradeThreshold = record.upgradeThreshold;
                 double shippingFee = record.shippingFee;
                 double discount = record.discount;
                 try {
                     if (!thresholdStr.isEmpty()) threshold = Double.parseDouble(thresholdStr);
+                    if (!upgradeThresholdStr.isEmpty()) upgradeThreshold = Double.parseDouble(upgradeThresholdStr);
                     if (!shippingFeeStr.isEmpty()) shippingFee = Double.parseDouble(shippingFeeStr);
                     if (!discountStr.isEmpty()) discount = Double.parseDouble(discountStr);
                 } catch (NumberFormatException e) {
@@ -201,12 +211,13 @@ public class Employee_Interface {
                     return currentListing;
                 }
                 
-                String sql = "UPDATE status SET threshold = ?, shipping_fee = ?, discount = ? WHERE level_name = ?";
+                String sql = "UPDATE status SET threshold = ?, upgrade_threshold = ?, shipping_fee = ?, discount = ? WHERE level_name = ?";
                 try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                     pstmt.setDouble(1, threshold);
-                    pstmt.setDouble(2, shippingFee);
-                    pstmt.setDouble(3, discount);
-                    pstmt.setString(4, record.levelName);
+                    pstmt.setDouble(2, upgradeThreshold);
+                    pstmt.setDouble(3, shippingFee);
+                    pstmt.setDouble(4, discount);
+                    pstmt.setString(5, record.levelName);
                     pstmt.executeUpdate();
                     System.out.println("Status level '" + record.levelName + "' updated successfully.");
                 } catch (SQLException e) {
@@ -722,6 +733,198 @@ public class Employee_Interface {
                 }
                 UIHelpers.waitForEnter();
             }
+            return parent;
+        }
+    }
+
+    private static class ManufacturerOrderScreen implements Screen {
+        private final Connection martConn;
+        private final Connection depotConn;
+        private final Screen parent;
+
+        public ManufacturerOrderScreen(Connection martConn, Connection depotConn, Screen parent) {
+            this.martConn = martConn;
+            this.depotConn = depotConn;
+            this.parent = parent;
+        }
+
+        private static class OrderItem {
+            String modelNum;
+            int qty;
+            boolean isNew;
+            String stockNum;
+            
+            // New item details
+            int minLevel;
+            int maxLevel;
+            String locLetter;
+            int locNum;
+
+            public OrderItem(String modelNum, int qty, boolean isNew, String stockNum) {
+                this.modelNum = modelNum;
+                this.qty = qty;
+                this.isNew = isNew;
+                this.stockNum = stockNum;
+            }
+        }
+
+        @Override
+        public Screen run() {
+            Utility.clearConsole();
+            System.out.println("=========================================");
+            System.out.println("        Send Supply Order to Depot       ");
+            System.out.println("=========================================");
+            
+            String manufacturer = UIHelpers.promptString("Enter Manufacturer name (leave empty to cancel): ");
+            if (manufacturer.isEmpty()) {
+                return parent;
+            }
+
+            List<OrderItem> items = new ArrayList<>();
+            while (true) {
+                String model = UIHelpers.promptString("\nEnter model number (leave empty to finish): ");
+                if (model.isEmpty()) {
+                    break;
+                }
+
+                int qty = UIHelpers.promptInt("Enter quantity to stock: ");
+                while (qty <= 0) {
+                    System.out.println("Quantity must be greater than 0.");
+                    qty = UIHelpers.promptInt("Enter quantity to stock: ");
+                }
+
+                boolean isNew = true;
+                String stockNum = null;
+                String checkSql = "SELECT stock_num FROM eDepot_Warehouse_Item WHERE mname = ? AND model_num = ?";
+                try (PreparedStatement pstmt = depotConn.prepareStatement(checkSql)) {
+                    pstmt.setString(1, manufacturer);
+                    pstmt.setString(2, model);
+                    try (ResultSet rs = pstmt.executeQuery()) {
+                        if (rs.next()) {
+                            isNew = false;
+                            stockNum = rs.getString("stock_num");
+                        }
+                    }
+                } catch (SQLException e) {
+                    System.out.println("Database check error: " + e.getMessage());
+                }
+
+                OrderItem item = new OrderItem(model, qty, isNew, stockNum);
+
+                if (isNew) {
+                    System.out.println("Item not in database. It is a new item to be added.");
+                    
+                    int minStock = UIHelpers.promptInt("Enter minimum stock level: ");
+                    while (minStock < 0) {
+                        System.out.println("Minimum stock level cannot be negative.");
+                        minStock = UIHelpers.promptInt("Enter minimum stock level: ");
+                    }
+
+                    int maxStock = UIHelpers.promptInt("Enter maximum stock level: ");
+                    while (maxStock < minStock) {
+                        System.out.println("Maximum stock level must be >= minimum stock level (" + minStock + ").");
+                        maxStock = UIHelpers.promptInt("Enter maximum stock level: ");
+                    }
+
+                    String locLetter = "";
+                    int locNum = 0;
+                    while (true) {
+                        while (true) {
+                            locLetter = UIHelpers.promptString("Enter stock location letter (A-Z): ").toUpperCase();
+                            if (locLetter.length() == 1 && Character.isLetter(locLetter.charAt(0))) {
+                                break;
+                            }
+                            System.out.println("Location letter must be a single character A-Z.");
+                        }
+
+                        locNum = UIHelpers.promptInt("Enter stock location number: ");
+                        while (locNum <= 0) {
+                            System.out.println("Location number must be positive.");
+                            locNum = UIHelpers.promptInt("Enter stock location number: ");
+                        }
+
+                        // Check if location is occupied
+                        boolean occupied = false;
+                        String locCheckSql = "SELECT stock_num, mname, model_num FROM eDepot_Warehouse_Item WHERE loc_letter = ? AND loc_num = ?";
+                        try (PreparedStatement pstmt = depotConn.prepareStatement(locCheckSql)) {
+                            pstmt.setString(1, locLetter);
+                            pstmt.setInt(2, locNum);
+                            try (ResultSet rs = pstmt.executeQuery()) {
+                                if (rs.next()) {
+                                    String existingStock = rs.getString("stock_num");
+                                    String existingMname = rs.getString("mname");
+                                    String existingModel = rs.getString("model_num");
+                                    System.out.println("Warning: Location " + locLetter + locNum + " is already occupied by item " + existingStock + " (" + existingMname + " " + existingModel + ").");
+                                    occupied = true;
+                                }
+                            }
+                        } catch (SQLException e) {
+                            // ignore
+                        }
+
+                        if (!occupied) {
+                            break;
+                        }
+                        System.out.println("Please enter a different location.");
+                    }
+
+                    item.minLevel = minStock;
+                    item.maxLevel = maxStock;
+                    item.locLetter = locLetter;
+                    item.locNum = locNum;
+                }
+
+                items.add(item);
+            }
+
+            if (items.isEmpty()) {
+                System.out.println("\nNo items ordered.");
+                UIHelpers.waitForEnter();
+                return parent;
+            }
+
+            List<OrderItem> newItems = new ArrayList<>();
+            List<OrderItem> existingItems = new ArrayList<>();
+            for (OrderItem item : items) {
+                if (item.isNew) {
+                    newItems.add(item);
+                } else {
+                    existingItems.add(item);
+                }
+            }
+
+            Utility.clearConsole();
+            System.out.println("=================================================================");
+            System.out.println("                         Supply Order Summary                    ");
+            System.out.println("=================================================================");
+            System.out.println("Manufacturer: " + manufacturer);
+            System.out.println("-----------------------------------------------------------------");
+
+            if (!newItems.isEmpty()) {
+                System.out.println("NEW ITEMS (to be added to database manually):");
+                System.out.println(String.format("%-15s | %-8s | %-8s | %-8s | %-10s", "Model", "Qty", "Min Lvl", "Max Lvl", "Location"));
+                System.out.println("-----------------------------------------------------------------");
+                for (OrderItem item : newItems) {
+                    System.out.println(String.format("%-15s | %-8d | %-8d | %-8d | %-10s", 
+                        item.modelNum, item.qty, item.minLevel, item.maxLevel, item.locLetter + item.locNum));
+                }
+                System.out.println();
+            }
+
+            if (!existingItems.isEmpty()) {
+                System.out.println("EXISTING ITEMS:");
+                System.out.println(String.format("%-10s | %-15s | %-8s", "Stock#", "Model", "Qty"));
+                System.out.println("-------------------------------------------------");
+                for (OrderItem item : existingItems) {
+                    System.out.println(String.format("%-10s | %-15s | %-8d", 
+                        item.stockNum, item.modelNum, item.qty));
+                }
+                System.out.println();
+            }
+
+            System.out.println("=================================================================");
+            UIHelpers.waitForEnter();
+
             return parent;
         }
     }
