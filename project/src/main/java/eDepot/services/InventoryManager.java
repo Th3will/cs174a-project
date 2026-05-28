@@ -4,15 +4,11 @@ import eDepot.dao.WarehouseItemDAO;
 import eDepot.dao.ShippingNoticeDAO;
 import eDepot.dao.NoticeLineDAO;
 import eDepot.dao.NoticeLineDAO.LineDetail;
-import eDepot.dao.ReplenishmentOrderDAO;
-import eDepot.dao.ReplenishmentLineDAO;
 import eDepot.dao.ManufacturerDAO;
 import eDepot.dao.LocationDAO;
 import eDepot.models.Location;
 import eDepot.models.Manufacturer;
 import eDepot.models.NoticeLine;
-import eDepot.models.ReplenishmentLine;
-import eDepot.models.ReplenishmentOrder;
 import eDepot.models.ShippingNotice;
 import eDepot.models.WarehouseItem;
 import eDepot.utils.DatabaseConnection;
@@ -39,8 +35,6 @@ public class InventoryManager {
     private final WarehouseItemDAO warehouseItemDAO;
     private final ShippingNoticeDAO shippingNoticeDAO;
     private final NoticeLineDAO noticeLineDAO;
-    private final ReplenishmentOrderDAO replenishmentOrderDAO;
-    private final ReplenishmentLineDAO replenishmentLineDAO;
     private final ManufacturerDAO manufacturerDAO;
     private final LocationDAO locationDAO;
 
@@ -48,8 +42,6 @@ public class InventoryManager {
         this.warehouseItemDAO = new WarehouseItemDAO();
         this.shippingNoticeDAO = new ShippingNoticeDAO();
         this.noticeLineDAO = new NoticeLineDAO();
-        this.replenishmentOrderDAO = new ReplenishmentOrderDAO();
-        this.replenishmentLineDAO = new ReplenishmentLineDAO();
         this.manufacturerDAO = new ManufacturerDAO();
         this.locationDAO = new LocationDAO();
     }
@@ -250,47 +242,45 @@ public class InventoryManager {
 
     /*
      * One line of an auto-generated replenishment order. replenishmentQuantity
-     * is the units being ordered for this product on this PO; newReplenishmentOnHand
-     * is the in-flight total after this line was applied to the warehouse row,
-     * so the CLI can show "we now have N units inbound for this stock_num".
+     * is the units that would be ordered for this product on this PO. These
+     * lines are never persisted to the database - they exist only so the CLI
+     * can print the replenishment order for the manager to send manually.
      */
     public static class GeneratedReplenishmentLine {
         private final String stockNumber;
         private final String modelNumber;
         private final int replenishmentQuantity;
-        private final int newReplenishmentOnHand;
 
         public GeneratedReplenishmentLine(String stockNumber, String modelNumber,
-                                          int replenishmentQuantity, int newReplenishmentOnHand) {
+                                          int replenishmentQuantity) {
             this.stockNumber = stockNumber;
             this.modelNumber = modelNumber;
             this.replenishmentQuantity = replenishmentQuantity;
-            this.newReplenishmentOnHand = newReplenishmentOnHand;
         }
 
         public String getStockNumber() { return stockNumber; }
         public String getModelNumber() { return modelNumber; }
         public int getReplenishmentQuantity() { return replenishmentQuantity; }
-        public int getNewReplenishmentOnHand() { return newReplenishmentOnHand; }
     }
 
     /*
-     * One whole replenishment order to a single manufacturer, holding the
-     * generated oid and the per-stock_num lines it contains.
+     * One whole replenishment order to a single manufacturer. orderNumber is
+     * a per-fillOrder local counter (1-based) used only for labelling the
+     * printed output - nothing about this record is persisted.
      */
     public static class GeneratedReplenishment {
-        private final int orderId;
+        private final int orderNumber;
         private final String manufacturerName;
         private final List<GeneratedReplenishmentLine> lines;
 
-        public GeneratedReplenishment(int orderId, String manufacturerName,
+        public GeneratedReplenishment(int orderNumber, String manufacturerName,
                                       List<GeneratedReplenishmentLine> lines) {
-            this.orderId = orderId;
+            this.orderNumber = orderNumber;
             this.manufacturerName = manufacturerName;
             this.lines = Collections.unmodifiableList(lines);
         }
 
-        public int getOrderId() { return orderId; }
+        public int getOrderNumber() { return orderNumber; }
         public String getManufacturerName() { return manufacturerName; }
         public List<GeneratedReplenishmentLine> getLines() { return lines; }
     }
@@ -571,14 +561,18 @@ public class InventoryManager {
      *  - After decrements, for every manufacturer that appeared in the order,
      *    count how many of THEIR inventory items are now below their min_level.
      *    Three or more triggers a replenishment order for that manufacturer.
+     *  - The replenishment order is COMPUTED ONLY - it is not written to the
+     *    database. It is returned in the result so the CLI can print it for
+     *    the manager to send to the manufacturer by hand. The warehouse
+     *    replenishment column is NOT modified by this trigger; it is only
+     *    bumped by an actual shipping notice arrival (option 1).
      *  - The replenishment order includes every one of that manufacturer's
      *    items where quantity + replenishment < max_level, ordered up to
      *    max_level (so replenishment_quantity = max_level - quantity -
-     *    replenishment). The same delta is added to the warehouse row's
-     *    replenishment column so a follow-up fillOrder in the same cycle
-     *    doesn't re-order what's already on the way.
-     *  - Atomic: any failure rolls back inventory, replenishment orders, and
-     *    the replenishment bumps together.
+     *    replenishment).
+     *  - Atomic: any failure during the inventory decrements rolls back the
+     *    whole order. Replenishment computation is read-only and never causes
+     *    a rollback.
      */
     public FillOrderResult fillOrder(int orderNumber, List<OrderLineInput> inputs) {
         if (orderNumber < 0) {
@@ -636,64 +630,54 @@ public class InventoryManager {
                 }
 
                 // -- TRIGGER FOR REPLENISHMENT ORDER BELOW --
-                
+                //
+                // Replenishment orders are PRINT-ONLY. We do not insert into
+                // eDepot_Replenishment_Order / eDepot_Replenishment_Line, and we do
+                // not bump the warehouse_item.replenishment column - that column is
+                // only moved by the shipping-notice / shipment-arrival flow.
+
                 // need a list of GeneratedReplenishment, because each replenishment order is tied to a manufacturer
                 // there can be items from multiple manufacturers that need to be replenished
                 List<GeneratedReplenishment> replenishments = new ArrayList<>();
 
-                // Sort the triggered manufacturers alphabetically so the generated
-                // replenishment-order IDs are assigned deterministically when one
-                // order touches several manufacturers.
+                // Sort the triggered manufacturers alphabetically so the printed
+                // replenishment-order numbers are assigned deterministically when one
+                // eMart order touches several manufacturers.
+                int nextOrderNumber = 1;
                 for (String mname : new TreeSet<>(manufacturersInOrder)) {
                     int belowMin = warehouseItemDAO.countItemsBelowMinForManufacturer(conn, mname);
                     if (belowMin < 3) {
                         continue;
                     }
                     List<WarehouseItem> candidates = warehouseItemDAO.findItemsBelowMaxForManufacturer(conn, mname);
+                    
+                    // i believe this condition is to check for race conditions, if somehow 2 eMart orders are placed close together
+                    // (probably not tested on the demo though, but keep in case)
                     if (candidates.isEmpty()) {
-                        // Trigger fired but every item for this manufacturer is already at or
-                        // fully covered up to max_level (e.g. previous replenishments already
-                        // in flight). Nothing to order.
+                        // Trigger fired but every item for this manufacturer is already at
+                        // or fully covered up to max_level. Nothing to order.
                         continue;
-                    }
-
-                    int oid = replenishmentOrderDAO.generateNextOrderId(conn);
-                    if (!replenishmentOrderDAO.insertReplenishmentOrder(conn, new ReplenishmentOrder(oid, mname))) {
-                        throw new SQLException("Failed to insert replenishment order for " + mname);
                     }
 
                     List<GeneratedReplenishmentLine> repLines = new ArrayList<>();
                     for (WarehouseItem item : candidates) {
                         int repQty = item.getMaxLevel() - item.getQuantity() - item.getReplenishment();
-                        // Defensive: query filter guarantees repQty > 0, but if a concurrent
-                        // bump slipped through, we don't want to insert a zero/negative line.
+                        // Defensive: query filter guarantees repQty > 0, but skip just in
+                        // case so we don't print a zero/negative line.
                         if (repQty <= 0) {
                             continue;
                         }
-
-                        if (!replenishmentLineDAO.insertReplenishmentLine(conn, new ReplenishmentLine(oid, item.getStockNumber(), repQty))) {
-                            throw new SQLException("Failed to insert replenishment line for " + item.getStockNumber());
-                        }
-
-                        if (!warehouseItemDAO.addReplenishment(conn, item.getStockNumber(), repQty)) {
-                            throw new SQLException("Failed to bump replenishment for " + item.getStockNumber());
-                        }
-
                         repLines.add(new GeneratedReplenishmentLine(
                                 item.getStockNumber(),
                                 item.getModelNumber(),
-                                repQty,
-                                item.getReplenishment() + repQty));
+                                repQty));
                     }
 
                     if (repLines.isEmpty()) {
-                        // Every candidate raced away from us. Roll back the empty header
-                        // by treating the situation as an error - a Replenishment_Order
-                        // with no lines is a malformed record.
-                        throw new SQLException("Replenishment order " + oid + " for " + mname + " ended up with no lines after concurrent updates");
+                        continue;
                     }
 
-                    replenishments.add(new GeneratedReplenishment(oid, mname, repLines));
+                    replenishments.add(new GeneratedReplenishment(nextOrderNumber++, mname, repLines));
                 }
 
                 conn.commit();

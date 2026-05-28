@@ -374,14 +374,13 @@ public class eDepotCLI {
                 System.out.println("\nNo replenishment orders triggered.");
             } 
             else {
-                System.out.println("\nGenerated replenishment orders:");
+                System.out.println("\nReplenishment orders to send (print-only, not stored):");
                 for (GeneratedReplenishment rep : result.getReplenishments()) {
-                    System.out.println("  Order " + rep.getOrderId() + " to " + rep.getManufacturerName() + ":");
+                    System.out.println("  Order " + rep.getOrderNumber() + " to " + rep.getManufacturerName() + ":");
                     for (GeneratedReplenishmentLine line : rep.getLines()) {
                         System.out.println("    - " + line.getStockNumber()
                                 + " (" + line.getModelNumber() + ")"
-                                + "  +" + line.getReplenishmentQuantity()
-                                + "  (in-flight total " + line.getNewReplenishmentOnHand() + ")");
+                                + "  order qty " + line.getReplenishmentQuantity());
                     }
                 }
             }
