@@ -11,6 +11,8 @@ import eDepot.dao.LocationDAO;
 import eDepot.models.Location;
 import eDepot.models.Manufacturer;
 import eDepot.models.NoticeLine;
+import eDepot.models.ReplenishmentLine;
+import eDepot.models.ReplenishmentOrder;
 import eDepot.models.ShippingNotice;
 import eDepot.models.WarehouseItem;
 import eDepot.utils.DatabaseConnection;
@@ -24,6 +26,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 /*
     * This class performs 4 main actions: 
@@ -176,6 +179,120 @@ public class InventoryManager {
         public String getModelNumber() { return modelNumber; }
         public int getQuantityReceived() { return quantityReceived; }
         public int getNewQuantityOnHand() { return newQuantityOnHand; }
+    }
+
+    /*
+     * Single (stock_num, quantity) line of an eMart order, collected by the CLI
+     * from the printed order sheet that the operator types in.
+     */
+    public static class OrderLineInput {
+        private final String stockNumber;
+        private final int quantity;
+
+        public OrderLineInput(String stockNumber, int quantity) {
+            this.stockNumber = stockNumber;
+            this.quantity = quantity;
+        }
+
+        public String getStockNumber() { return stockNumber; }
+        public int getQuantity() { return quantity; }
+    }
+
+    /*
+     * Aggregate result of fillOrder: every order line that was decremented plus
+     * any replenishment orders that were generated as a side effect. The two
+     * lists together let the CLI print a full receipt of the transaction.
+     */
+    public static class FillOrderResult {
+        private final int orderNumber;
+        private final List<FilledOrderLine> filled;
+        private final List<GeneratedReplenishment> replenishments;
+
+        public FillOrderResult(int orderNumber, List<FilledOrderLine> filled,
+                               List<GeneratedReplenishment> replenishments) {
+            this.orderNumber = orderNumber;
+            this.filled = Collections.unmodifiableList(filled);
+            this.replenishments = Collections.unmodifiableList(replenishments);
+        }
+
+        public int getOrderNumber() { return orderNumber; }
+        public List<FilledOrderLine> getFilled() { return filled; }
+        public List<GeneratedReplenishment> getReplenishments() { return replenishments; }
+    }
+
+    /*
+     * Per-line outcome of a filled order: how much was decremented and what the
+     * new on-hand quantity is, plus enough manufacturer/model info for the CLI
+     * to show a human-readable confirmation.
+     */
+    public static class FilledOrderLine {
+        private final String stockNumber;
+        private final String manufacturerName;
+        private final String modelNumber;
+        private final int quantitySold;
+        private final int newQuantityOnHand;
+
+        public FilledOrderLine(String stockNumber, String manufacturerName, String modelNumber,
+                               int quantitySold, int newQuantityOnHand) {
+            this.stockNumber = stockNumber;
+            this.manufacturerName = manufacturerName;
+            this.modelNumber = modelNumber;
+            this.quantitySold = quantitySold;
+            this.newQuantityOnHand = newQuantityOnHand;
+        }
+
+        public String getStockNumber() { return stockNumber; }
+        public String getManufacturerName() { return manufacturerName; }
+        public String getModelNumber() { return modelNumber; }
+        public int getQuantitySold() { return quantitySold; }
+        public int getNewQuantityOnHand() { return newQuantityOnHand; }
+    }
+
+    /*
+     * One line of an auto-generated replenishment order. replenishmentQuantity
+     * is the units being ordered for this product on this PO; newReplenishmentOnHand
+     * is the in-flight total after this line was applied to the warehouse row,
+     * so the CLI can show "we now have N units inbound for this stock_num".
+     */
+    public static class GeneratedReplenishmentLine {
+        private final String stockNumber;
+        private final String modelNumber;
+        private final int replenishmentQuantity;
+        private final int newReplenishmentOnHand;
+
+        public GeneratedReplenishmentLine(String stockNumber, String modelNumber,
+                                          int replenishmentQuantity, int newReplenishmentOnHand) {
+            this.stockNumber = stockNumber;
+            this.modelNumber = modelNumber;
+            this.replenishmentQuantity = replenishmentQuantity;
+            this.newReplenishmentOnHand = newReplenishmentOnHand;
+        }
+
+        public String getStockNumber() { return stockNumber; }
+        public String getModelNumber() { return modelNumber; }
+        public int getReplenishmentQuantity() { return replenishmentQuantity; }
+        public int getNewReplenishmentOnHand() { return newReplenishmentOnHand; }
+    }
+
+    /*
+     * One whole replenishment order to a single manufacturer, holding the
+     * generated oid and the per-stock_num lines it contains.
+     */
+    public static class GeneratedReplenishment {
+        private final int orderId;
+        private final String manufacturerName;
+        private final List<GeneratedReplenishmentLine> lines;
+
+        public GeneratedReplenishment(int orderId, String manufacturerName,
+                                      List<GeneratedReplenishmentLine> lines) {
+            this.orderId = orderId;
+            this.manufacturerName = manufacturerName;
+            this.lines = Collections.unmodifiableList(lines);
+        }
+
+        public int getOrderId() { return orderId; }
+        public String getManufacturerName() { return manufacturerName; }
+        public List<GeneratedReplenishmentLine> getLines() { return lines; }
     }
 
     /*
@@ -441,13 +558,177 @@ public class InventoryManager {
     }
 
     /*
-     * Option (4): fill an order from eMart
+     * Option (4): fill an order from eMart inside one DB transaction.
+     *
+     * Inputs are an order number (printed on the eMart order sheet) and a list
+     * of (stock_num, quantity) lines that the CLI operator manually types in.
+     * eDepot does NOT cross into the eMart database - eMart hands the data in.
+     *
+     * Behavior:
+     *  - Reject the whole order if any line references an unknown stock number
+     *    or asks for more units than are on-hand. The "quantity >= ?" guard in
+     *    decrementQuantity catches concurrent under-runs.
+     *  - After decrements, for every manufacturer that appeared in the order,
+     *    count how many of THEIR inventory items are now below their min_level.
+     *    Three or more triggers a replenishment order for that manufacturer.
+     *  - The replenishment order includes every one of that manufacturer's
+     *    items where quantity + replenishment < max_level, ordered up to
+     *    max_level (so replenishment_quantity = max_level - quantity -
+     *    replenishment). The same delta is added to the warehouse row's
+     *    replenishment column so a follow-up fillOrder in the same cycle
+     *    doesn't re-order what's already on the way.
+     *  - Atomic: any failure rolls back inventory, replenishment orders, and
+     *    the replenishment bumps together.
      */
-    public void fillOrder() {
-        
+    public FillOrderResult fillOrder(int orderNumber, List<OrderLineInput> inputs) {
+        if (orderNumber < 0) {
+            throw new IllegalArgumentException("Order number must be >= 0");
+        }
+        if (inputs == null || inputs.isEmpty()) {
+            throw new IllegalArgumentException("An order must contain at least one line item");
+        }
+
+        try (Connection conn = DatabaseConnection.testConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                List<FilledOrderLine> filled = new ArrayList<>();
+                Set<String> manufacturersInOrder = new HashSet<>();
+                Set<String> stockNumsInThisOrder = new HashSet<>();
+
+                for (OrderLineInput input : inputs) {
+                    validateOrderLineInput(input);
+
+                    if (!stockNumsInThisOrder.add(input.getStockNumber())) {
+                        throw new IllegalArgumentException(
+                                "Duplicate stock number within the same order: " + input.getStockNumber()
+                                        + " (combine the quantities into a single line)");
+                    }
+
+                    WarehouseItem item = warehouseItemDAO.findByStockNumber(conn, input.getStockNumber());
+                    if (item == null) {
+                        throw new IllegalArgumentException(
+                                "No warehouse item found for stock number: " + input.getStockNumber());
+                    }
+                    if (item.getQuantity() < input.getQuantity()) {
+                        throw new IllegalArgumentException(
+                                "Insufficient stock for " + input.getStockNumber()
+                                        + " (" + item.getManufacturerName() + "/" + item.getModelNumber()
+                                        + "): requested " + input.getQuantity()
+                                        + ", on-hand " + item.getQuantity());
+                    }
+
+                    if (!warehouseItemDAO.decrementQuantity(conn, input.getStockNumber(), input.getQuantity())) {
+                        // Race: another transaction drove the on-hand quantity below our request
+                        // between findByStockNumber() above and this UPDATE. Abort cleanly.
+                        throw new IllegalArgumentException(
+                                "Stock for " + input.getStockNumber()
+                                        + " became insufficient during the transaction");
+                    }
+
+                    int newQuantity = item.getQuantity() - input.getQuantity();
+                    manufacturersInOrder.add(item.getManufacturerName());
+                    filled.add(new FilledOrderLine(
+                            input.getStockNumber(),
+                            item.getManufacturerName(),
+                            item.getModelNumber(),
+                            input.getQuantity(),
+                            newQuantity));
+                }
+
+                // -- TRIGGER FOR REPLENISHMENT ORDER BELOW --
+                
+                // need a list of GeneratedReplenishment, because each replenishment order is tied to a manufacturer
+                // there can be items from multiple manufacturers that need to be replenished
+                List<GeneratedReplenishment> replenishments = new ArrayList<>();
+
+                // Sort the triggered manufacturers alphabetically so the generated
+                // replenishment-order IDs are assigned deterministically when one
+                // order touches several manufacturers.
+                for (String mname : new TreeSet<>(manufacturersInOrder)) {
+                    int belowMin = warehouseItemDAO.countItemsBelowMinForManufacturer(conn, mname);
+                    if (belowMin < 3) {
+                        continue;
+                    }
+                    List<WarehouseItem> candidates = warehouseItemDAO.findItemsBelowMaxForManufacturer(conn, mname);
+                    if (candidates.isEmpty()) {
+                        // Trigger fired but every item for this manufacturer is already at or
+                        // fully covered up to max_level (e.g. previous replenishments already
+                        // in flight). Nothing to order.
+                        continue;
+                    }
+
+                    int oid = replenishmentOrderDAO.generateNextOrderId(conn);
+                    if (!replenishmentOrderDAO.insertReplenishmentOrder(conn, new ReplenishmentOrder(oid, mname))) {
+                        throw new SQLException("Failed to insert replenishment order for " + mname);
+                    }
+
+                    List<GeneratedReplenishmentLine> repLines = new ArrayList<>();
+                    for (WarehouseItem item : candidates) {
+                        int repQty = item.getMaxLevel() - item.getQuantity() - item.getReplenishment();
+                        // Defensive: query filter guarantees repQty > 0, but if a concurrent
+                        // bump slipped through, we don't want to insert a zero/negative line.
+                        if (repQty <= 0) {
+                            continue;
+                        }
+
+                        if (!replenishmentLineDAO.insertReplenishmentLine(conn, new ReplenishmentLine(oid, item.getStockNumber(), repQty))) {
+                            throw new SQLException("Failed to insert replenishment line for " + item.getStockNumber());
+                        }
+
+                        if (!warehouseItemDAO.addReplenishment(conn, item.getStockNumber(), repQty)) {
+                            throw new SQLException("Failed to bump replenishment for " + item.getStockNumber());
+                        }
+
+                        repLines.add(new GeneratedReplenishmentLine(
+                                item.getStockNumber(),
+                                item.getModelNumber(),
+                                repQty,
+                                item.getReplenishment() + repQty));
+                    }
+
+                    if (repLines.isEmpty()) {
+                        // Every candidate raced away from us. Roll back the empty header
+                        // by treating the situation as an error - a Replenishment_Order
+                        // with no lines is a malformed record.
+                        throw new SQLException("Replenishment order " + oid + " for " + mname + " ended up with no lines after concurrent updates");
+                    }
+
+                    replenishments.add(new GeneratedReplenishment(oid, mname, repLines));
+                }
+
+                conn.commit();
+                return new FillOrderResult(orderNumber, filled, replenishments);
+            }
+            catch (RuntimeException | SQLException e) {
+                try { conn.rollback(); } catch (SQLException ignore) { /* surfaced below */ }
+                if (e instanceof IllegalArgumentException) {
+                    throw (IllegalArgumentException) e;
+                }
+                throw new RuntimeException("Failed to fill order " + orderNumber + ": " + e.getMessage(), e);
+            }
+        }
+        catch (SQLException e) {
+            throw new RuntimeException("DB connection error while filling order " + orderNumber
+                    + ": " + e.getMessage(), e);
+        }
     }
 
     // HELPER METHODS -- all below this line
+    private void validateOrderLineInput(OrderLineInput input) {
+        if (input == null) {
+            throw new IllegalArgumentException("Order line is null");
+        }
+        if (input.getStockNumber() == null || !input.getStockNumber().matches("^[A-Z]{2}[0-9]{5}$")) {
+            throw new IllegalArgumentException(
+                    "Invalid stock number format - expected XXnnnnn where XX = 2 uppercase letters "
+                            + "and nnnnn = 5 digits (got: " + input.getStockNumber() + ")");
+        }
+        if (input.getQuantity() <= 0) {
+            throw new IllegalArgumentException(
+                    "Order quantity must be positive for " + input.getStockNumber());
+        }
+    }
+
     private void validateLineInput(NoticeLineInput input) {
         if (input == null) {
             throw new IllegalArgumentException("Notice line is null");
@@ -486,8 +767,7 @@ public class InventoryManager {
      * decision still happens inside processShippingNotice's transaction.
      */
     public boolean isKnownWarehouseProduct(String manufacturerName, String modelNumber) {
-        if (manufacturerName == null || manufacturerName.trim().isEmpty()
-                || modelNumber == null || modelNumber.trim().isEmpty()) {
+        if (manufacturerName == null || manufacturerName.trim().isEmpty() || modelNumber == null || modelNumber.trim().isEmpty()) {
             return false;
         }
         try (Connection conn = DatabaseConnection.testConnection()) {

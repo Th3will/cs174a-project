@@ -13,25 +13,24 @@ import java.util.ArrayList;
 
 public class ReplenishmentLineDAO {
     public boolean insertReplenishmentLine(ReplenishmentLine line) {
-        String sql = "INSERT INTO eDepot_Replenishment_Line (oid, stock_num, replenishment_quantity) VALUES (?, ?, ?)";
-
-        try (Connection conn = DatabaseConnection.testConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-            pstmt.setInt(1, line.getOrderId());
-            pstmt.setString(2, line.getStockNumber());
-            pstmt.setInt(3, line.getReplenishmentQuantity());
-
-            int rowsAffected = pstmt.executeUpdate();
-            if (rowsAffected > 0) {
-                System.out.println("Success: Replenishment line for order " + line.getOrderId() + " inserted");
-                return true;
-            }
+        try (Connection conn = DatabaseConnection.testConnection()) {
+            return insertReplenishmentLine(conn, line);
         }
         catch (SQLException e) {
             System.err.println("DB error while inserting replenishment line: " + e.getMessage());
+            return false;
         }
-        return false;
+    }
+
+    public boolean insertReplenishmentLine(Connection conn, ReplenishmentLine line) throws SQLException {
+        String sql = "INSERT INTO eDepot_Replenishment_Line (oid, stock_num, replenishment_quantity) VALUES (?, ?, ?)";
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, line.getOrderId());
+            pstmt.setString(2, line.getStockNumber());
+            pstmt.setInt(3, line.getReplenishmentQuantity());
+            return pstmt.executeUpdate() > 0;
+        }
     }
 
     // return all lines in a replenishment order corresponding to a specific replenishment order ID

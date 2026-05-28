@@ -7,6 +7,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class WarehouseItemDAO {
     private static final String INSERT_SQL =
@@ -204,5 +206,78 @@ public class WarehouseItemDAO {
         throw new IllegalStateException("Stock number space exhausted past ZZ99999");
     }
 
-    // TODO: add methods for fill-order inventory updates and replenishment checks.
+    /*
+     * Decrement on-hand quantity for one stock number. The "quantity >= ?" guard
+     * means the UPDATE silently returns 0 rows when the stock is insufficient,
+     * which the caller can use to abort the whole fillOrder transaction with a
+     * precise error. The chk_wi_qty CHECK in the schema is a backstop in case
+     * a concurrent transaction beats us to the row between read and write.
+     */
+    public boolean decrementQuantity(Connection conn, String stockNumber, int orderQuantity) throws SQLException {
+        String sql = "UPDATE eDepot_Warehouse_Item SET quantity = quantity - ? "
+                + "WHERE stock_num = ? AND quantity >= ?";
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, orderQuantity);
+            pstmt.setString(2, stockNumber);
+            pstmt.setInt(3, orderQuantity);
+            return pstmt.executeUpdate() > 0;
+        }
+    }
+
+    /*
+     * Count of items belonging to the given manufacturer whose current on-hand
+     * quantity sits strictly below their min_level. Used as the replenishment
+     * trigger - per the spec, 3+ such items on the same manufacturer kicks off
+     * a replenishment order for that manufacturer.
+     */
+    public int countItemsBelowMinForManufacturer(Connection conn, String manufacturerName) throws SQLException {
+        String sql = "SELECT COUNT(*) AS cnt FROM eDepot_Warehouse_Item "
+                + "WHERE mname = ? AND quantity < min_level";
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, manufacturerName);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next() ? rs.getInt("cnt") : 0;
+            }
+        }
+    }
+
+    /*
+     * All items belonging to the given manufacturer that still have headroom in
+     * the warehouse - i.e. quantity + replenishment < max_level. The strict
+     * inequality matches the inclusion rule we picked: anything at the
+     * cap is left out, and a row with quantity + replenishment < max_level
+     * needs (max_level - quantity - replenishment) more units to top up to max.
+     * 
+     * TLDR: return a list of item from a specific manufacturer, where each item's quantity + replenishment < max stock level
+     */
+    public List<WarehouseItem> findItemsBelowMaxForManufacturer(Connection conn, String manufacturerName)
+            throws SQLException {
+        String sql = "SELECT stock_num, mname, model_num, quantity, min_level, max_level, "
+                + "replenishment, loc_letter, loc_num "
+                + "FROM eDepot_Warehouse_Item "
+                + "WHERE mname = ? AND quantity + replenishment < max_level "
+                + "ORDER BY stock_num";
+
+        List<WarehouseItem> items = new ArrayList<>();
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, manufacturerName);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    items.add(new WarehouseItem(
+                            rs.getString("stock_num"),
+                            rs.getString("mname"),
+                            rs.getString("model_num"),
+                            rs.getInt("quantity"),
+                            rs.getInt("min_level"),
+                            rs.getInt("max_level"),
+                            rs.getInt("replenishment"),
+                            rs.getString("loc_letter"),
+                            rs.getInt("loc_num")));
+                }
+            }
+        }
+        return items;
+    }
 }

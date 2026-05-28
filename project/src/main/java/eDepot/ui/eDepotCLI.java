@@ -1,14 +1,21 @@
 package eDepot.ui;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Scanner;
+import java.util.Set;
 
 import eDepot.dao.NoticeLineDAO.LineDetail;
 import eDepot.models.ShippingNotice;
 import eDepot.services.InventoryManager;
 import eDepot.services.InventoryManager.AppliedShipmentLine;
+import eDepot.services.InventoryManager.FillOrderResult;
+import eDepot.services.InventoryManager.FilledOrderLine;
+import eDepot.services.InventoryManager.GeneratedReplenishment;
+import eDepot.services.InventoryManager.GeneratedReplenishmentLine;
 import eDepot.services.InventoryManager.NoticeLineInput;
+import eDepot.services.InventoryManager.OrderLineInput;
 import eDepot.services.InventoryManager.ProcessedLine;
 import eDepot.services.InventoryManager.ShipmentPreview;
 
@@ -64,6 +71,7 @@ public class eDepotCLI {
         System.out.println("5. Exit");
     }
 
+    // TRANSACTION (1): Receive shipping notice from manufacturer
     private void handleReceiveShippingNotice() {
         System.out.println("\n[Transaction: Receive Shipping Notice]");
 
@@ -209,6 +217,7 @@ public class eDepotCLI {
         }
     }
 
+    // TRANSACTION (2): Receive a physical shipment from a prior shipping notice
     private void handleReceiveShipment() {
         System.out.println("\n[Transaction: Receive Shipment]");
         ShipmentPreview preview = null;
@@ -283,6 +292,7 @@ public class eDepotCLI {
         }
     }
 
+    // TRANSACTION (3): Search up an item by stock # and get its quantity
     private void handleCheckItemQuantity() {
         System.out.println("\n[Transaction: Check Item Quantity]");
         System.out.print("Enter Stock Number (XXnnnnn): ");
@@ -297,13 +307,96 @@ public class eDepotCLI {
         }
     }
 
+    // TRANSACTION (4): Input a fill order by hand; need order num and each item's (stockNum, orderQuantity)
     private void handleFillOrder() {
         System.out.println("\n[Transaction: Fill an Order]");
-        // TODO: Prompt for eMART Order Number
-        // TODO: Pass data to inventoryManager.fillOrder(...)
-        // Note: The inventory manager will handle the automated replenishment logic internally!
+        System.out.println("Enter the order details from the eMart order sheet.");
+
+        Integer orderNum = promptNonNegativeInt("Enter Order Number (or blank to cancel): ", true);
+        if (orderNum == null) {
+            System.out.println("Cancelled.");
+            return;
+        }
+
+        List<OrderLineInput> lines = new ArrayList<>();
+        Set<String> seenStockNums = new HashSet<>();
+        System.out.println("\nEnter order line items. Type 'done' as the stock number to finish.");
+
+        int lineNumber = 1;
+        while (true) {
+            System.out.println("\n-- Line " + lineNumber + " --");
+            String stockNum = promptStockNumberOrDone("  Stock Number (XXnnnnn, or 'done' to finish): ");
+            if (stockNum == null) {
+                break;
+            }
+            if (!seenStockNums.add(stockNum)) {
+                System.out.println("  Stock number " + stockNum
+                        + " is already in this order. Combine the quantities into a single line.");
+                continue;
+            }
+            Integer orderQuantity = promptPositiveInt("  Order Quantity (positive integer): ", false);
+            lines.add(new OrderLineInput(stockNum, orderQuantity));
+            lineNumber++;
+        }
+
+        if (lines.isEmpty()) {
+            System.out.println("No line items entered. Order cancelled.");
+            return;
+        }
+
+        System.out.println("\n--- Review Order ---");
+        System.out.println("Order Number: " + orderNum);
+        System.out.println("Lines:");
+        for (OrderLineInput line : lines) {
+            System.out.println("  - " + line.getStockNumber() + "  qty=" + line.getQuantity());
+        }
+
+        System.out.print("\nSubmit this order? (y/n): ");
+        String confirm = scanner.nextLine().trim();
+        if (!confirm.equalsIgnoreCase("y") && !confirm.equalsIgnoreCase("yes")) {
+            System.out.println("Order cancelled. No changes were made.");
+            return;
+        }
+
+        try {
+            FillOrderResult result = inventoryManager.fillOrder(orderNum, lines);
+
+            System.out.println("\nSuccess: Order " + orderNum + " filled.");
+            System.out.println("Inventory updates:");
+            for (FilledOrderLine line : result.getFilled()) {
+                System.out.println("  - " + line.getStockNumber()
+                        + "  " + line.getManufacturerName() + "/" + line.getModelNumber()
+                        + "  -" + line.getQuantitySold()
+                        + "  (on-hand now " + line.getNewQuantityOnHand() + ")");
+            }
+
+            if (result.getReplenishments().isEmpty()) {
+                System.out.println("\nNo replenishment orders triggered.");
+            } 
+            else {
+                System.out.println("\nGenerated replenishment orders:");
+                for (GeneratedReplenishment rep : result.getReplenishments()) {
+                    System.out.println("  Order " + rep.getOrderId() + " to " + rep.getManufacturerName() + ":");
+                    for (GeneratedReplenishmentLine line : rep.getLines()) {
+                        System.out.println("    - " + line.getStockNumber()
+                                + " (" + line.getModelNumber() + ")"
+                                + "  +" + line.getReplenishmentQuantity()
+                                + "  (in-flight total " + line.getNewReplenishmentOnHand() + ")");
+                    }
+                }
+            }
+        }
+        catch (IllegalArgumentException e) {
+            System.out.println("Error: " + e.getMessage());
+            System.out.println("No changes were committed.");
+        }
+        catch (RuntimeException e) {
+            System.out.println("Unexpected error: " + e.getMessage());
+            System.out.println("No changes were committed.");
+        }
     }
 
+    // -- HELPER FUNCTIONS ALL BELOW THIS LINE -- 
     // Note: the difference between promptPositiveInt() and promptNonNegativeInt() is just one allows 0 and one disallows 0
     private Integer promptPositiveInt(String prompt, boolean allowBlankCancel) {
         while (true) {
@@ -357,6 +450,26 @@ public class eDepotCLI {
                 continue;
             }
             return raw;
+        }
+    }
+
+    /*
+     * Prompt for a stock number in XXnnnnn form, or 'done' to end the loop.
+     * Uppercases the input before validating so the operator can type either
+     * case. Returns null iff the operator typed 'done' (case-insensitive).
+     */
+    private String promptStockNumberOrDone(String prompt) {
+        while (true) {
+            System.out.print(prompt);
+            String raw = scanner.nextLine().trim();
+            if (raw.equalsIgnoreCase("done")) {
+                return null;
+            }
+            if (raw.matches("^[A-Z]{2}[0-9]{5}$")) {
+                return raw;
+            }
+            System.out.println("  Not a valid stock number. Expected XXnnnnn (2 letters + 5 digits), "
+                    + "or 'done' to finish.");
         }
     }
 
