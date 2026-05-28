@@ -41,7 +41,7 @@ public class ShippingNoticeDAO {
         }
     }
 
-    public ShippingNotice findById(Connection conn, int snid) throws SQLException {
+    public ShippingNotice findByShippingNoticeId(Connection conn, int snid) throws SQLException {
         String sql = "SELECT snid, shipping_company_name FROM eDepot_Shipping_Notice WHERE snid = ?";
 
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {

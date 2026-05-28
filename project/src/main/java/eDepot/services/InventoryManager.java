@@ -473,7 +473,7 @@ public class InventoryManager {
         try (Connection conn = DatabaseConnection.testConnection()) {
             conn.setAutoCommit(false);
             try {
-                ShippingNotice notice = shippingNoticeDAO.findById(conn, snid);
+                ShippingNotice notice = shippingNoticeDAO.findByShippingNoticeId(conn, snid);
                 if (notice == null) {
                     throw new IllegalArgumentException("No shipping notice exists for ID " + snid);
                 }
@@ -802,7 +802,7 @@ public class InventoryManager {
      */
     public ShipmentPreview getShipmentPreview(int snid) {
         try (Connection conn = DatabaseConnection.testConnection()) {
-            ShippingNotice notice = shippingNoticeDAO.findById(conn, snid);
+            ShippingNotice notice = shippingNoticeDAO.findByShippingNoticeId(conn, snid);
             if (notice == null) {
                 return null;
             }
