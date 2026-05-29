@@ -94,9 +94,12 @@ public class UserInterface {
             this.parent = parent;
         }
 
-        private boolean userExists(String id) throws SQLException {
-            return DbImporter.recordExists(conn, "customer", "cid", id) || 
-                   DbImporter.recordExists(conn, "manager", "eid", id);
+        private boolean userExists(String id, String userType) throws SQLException {
+            if (userType.equals("customer")) {
+                return DbImporter.recordExists(conn, "customer", "cid", id);
+            } else {
+                return DbImporter.recordExists(conn, "manager", "eid", id);
+            }
         }
 
         @Override
@@ -126,7 +129,7 @@ public class UserInterface {
             }
 
             try {
-                if (userExists(id)) {
+                if (userExists(id, userType)) {
                     System.out.println("An account with ID '" + id + "' already exists.");
                     UIHelpers.waitForEnter();
                     return this;

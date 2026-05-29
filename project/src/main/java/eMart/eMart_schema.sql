@@ -74,6 +74,7 @@ create table order_table (
 create table status (
    level_name   varchar2(20),
    threshold    number(10,2) not null,
+   upgrade_threshold number(10,2) not null,
    shipping_fee number(5,2) not null,
    discount     number(4,2) not null,
    primary key ( level_name )

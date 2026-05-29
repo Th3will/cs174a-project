@@ -121,15 +121,14 @@ public class Employee_Interface {
             } else if (choice.equals("5")) {
                 return new CleanupTransactionsScreen(martConn, this);
             } else if (choice.equals("6")) {
-                System.out.println("Logging out...");
-                UIHelpers.sleep(800);
-                return parent;
-            // TODO: add in manufacturer order
-            } else if (choice.equals("7")) {
                 return new ManufacturerOrderScreen(martConn, depotConn, this);
+            } else if (choice.equals("7")) {
+                System.out.println("Logging out...");
+                UIHelpers.sleep(500);
+                return parent;
             } else {
                 System.out.println("Invalid choice. Please try again.");
-                UIHelpers.sleep(1000);
+                UIHelpers.sleep(500);
                 return this;
             }
         }
@@ -374,9 +373,13 @@ public class Employee_Interface {
             String choice = UIHelpers.promptString("Enter selection: ");
             
             if (choice.equals("1")) {
-                return new ProductSummaryScreen(conn, month, year, this);
+                String adjChoice = UIHelpers.promptString("Include discounts in revenue calculations? (y/n): ");
+                boolean includeDiscount = adjChoice.equalsIgnoreCase("y");
+                return new ProductSummaryScreen(conn, month, year, includeDiscount, this);
             } else if (choice.equals("2")) {
-                return new CategorySummaryScreen(conn, month, year, this);
+                String adjChoice = UIHelpers.promptString("Include discounts in revenue calculations? (y/n): ");
+                boolean includeDiscount = adjChoice.equalsIgnoreCase("y");
+                return new CategorySummaryScreen(conn, month, year, includeDiscount, this);
             } else if (choice.equals("3")) {
                 return new TopCustomerSummaryScreen(conn, month, year, this);
             } else {
@@ -389,12 +392,14 @@ public class Employee_Interface {
         private final Connection conn;
         private final int month;
         private final int year;
+        private final boolean includeDiscount;
         private final Screen parent;
 
-        public ProductSummaryScreen(Connection conn, int month, int year, Screen parent) {
+        public ProductSummaryScreen(Connection conn, int month, int year, boolean includeDiscount, Screen parent) {
             this.conn = conn;
             this.month = month;
             this.year = year;
+            this.includeDiscount = includeDiscount;
             this.parent = parent;
         }
 
@@ -419,7 +424,17 @@ public class Employee_Interface {
             PageProvider<ProductSummaryRow> provider = (pageNumber, pageSize) -> {
                 List<ProductSummaryRow> list = new ArrayList<>();
                 int offset = (pageNumber - 1) * pageSize;
-                String sql = "SELECT ol.stock_num, i.mname, i.model_num, SUM(ol.order_quantity) AS total_qty, SUM(ol.order_quantity * ol.order_price) AS total_revenue " +
+                String sql = includeDiscount ?
+                             "SELECT ol.stock_num, i.mname, i.model_num, SUM(ol.order_quantity) AS total_qty, " +
+                             "SUM(ol.order_quantity * ol.order_price * (1 - COALESCE(o.discount, 0) / CASE WHEN ord_sub.subtotal = 0 THEN 1 ELSE ord_sub.subtotal END)) AS total_revenue " +
+                             "FROM order_line ol " +
+                             "JOIN order_table o ON ol.ord_num = o.ord_num " +
+                             "JOIN item i ON ol.stock_num = i.stock_num " +
+                             "JOIN (SELECT ord_num, SUM(order_quantity * order_price) AS subtotal FROM order_line GROUP BY ord_num) ord_sub ON o.ord_num = ord_sub.ord_num " +
+                             "WHERE EXTRACT(MONTH FROM o.order_date) = ? AND EXTRACT(YEAR FROM o.order_date) = ? " +
+                             "GROUP BY ol.stock_num, i.mname, i.model_num " +
+                             "ORDER BY total_revenue DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY" :
+                             "SELECT ol.stock_num, i.mname, i.model_num, SUM(ol.order_quantity) AS total_qty, SUM(ol.order_quantity * ol.order_price) AS total_revenue " +
                              "FROM order_line ol JOIN order_table o ON ol.ord_num = o.ord_num JOIN item i ON ol.stock_num = i.stock_num " +
                              "WHERE EXTRACT(MONTH FROM o.order_date) = ? AND EXTRACT(YEAR FROM o.order_date) = ? " +
                              "GROUP BY ol.stock_num, i.mname, i.model_num " +
@@ -447,7 +462,8 @@ public class Employee_Interface {
             Consumer<ProductSummaryRow> displayer = r -> 
                 System.out.println(r.stockNum + " | " + r.manufacturer + " " + r.model + " | Total Quantity Sold: " + r.totalQty + " | Revenue: $" + String.format("%.2f", r.totalRev));
 
-            return new EntityListing<>("Product Sales Summary (" + month + "/" + year + ")", provider, displayer, null, null, parent).run();
+            String title = "Product Sales Summary (" + month + "/" + year + ")" + (includeDiscount ? " [Discount Adjusted]" : "");
+            return new EntityListing<>(title, provider, displayer, null, null, parent).run();
         }
     }
 
@@ -455,12 +471,14 @@ public class Employee_Interface {
         private final Connection conn;
         private final int month;
         private final int year;
+        private final boolean includeDiscount;
         private final Screen parent;
 
-        public CategorySummaryScreen(Connection conn, int month, int year, Screen parent) {
+        public CategorySummaryScreen(Connection conn, int month, int year, boolean includeDiscount, Screen parent) {
             this.conn = conn;
             this.month = month;
             this.year = year;
+            this.includeDiscount = includeDiscount;
             this.parent = parent;
         }
 
@@ -481,7 +499,17 @@ public class Employee_Interface {
             PageProvider<CategorySummaryRow> provider = (pageNumber, pageSize) -> {
                 List<CategorySummaryRow> list = new ArrayList<>();
                 int offset = (pageNumber - 1) * pageSize;
-                String sql = "SELECT i.category, SUM(ol.order_quantity) AS total_qty, SUM(ol.order_quantity * ol.order_price) AS total_revenue " +
+                String sql = includeDiscount ?
+                             "SELECT i.category, SUM(ol.order_quantity) AS total_qty, " +
+                             "SUM(ol.order_quantity * ol.order_price * (1 - COALESCE(o.discount, 0) / CASE WHEN ord_sub.subtotal = 0 THEN 1 ELSE ord_sub.subtotal END)) AS total_revenue " +
+                             "FROM order_line ol " +
+                             "JOIN order_table o ON ol.ord_num = o.ord_num " +
+                             "JOIN item i ON ol.stock_num = i.stock_num " +
+                             "JOIN (SELECT ord_num, SUM(order_quantity * order_price) AS subtotal FROM order_line GROUP BY ord_num) ord_sub ON o.ord_num = ord_sub.ord_num " +
+                             "WHERE EXTRACT(MONTH FROM o.order_date) = ? AND EXTRACT(YEAR FROM o.order_date) = ? " +
+                             "GROUP BY i.category " +
+                             "ORDER BY total_revenue DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY" :
+                             "SELECT i.category, SUM(ol.order_quantity) AS total_qty, SUM(ol.order_quantity * ol.order_price) AS total_revenue " +
                              "FROM order_line ol JOIN order_table o ON ol.ord_num = o.ord_num JOIN item i ON ol.stock_num = i.stock_num " +
                              "WHERE EXTRACT(MONTH FROM o.order_date) = ? AND EXTRACT(YEAR FROM o.order_date) = ? " +
                              "GROUP BY i.category " +
@@ -507,7 +535,8 @@ public class Employee_Interface {
             Consumer<CategorySummaryRow> displayer = r -> 
                 System.out.println(r.category + " | Total Quantity Sold: " + r.totalQty + " | Total Revenue: $" + String.format("%.2f", r.totalRev));
 
-            return new EntityListing<>("Category Sales Summary (" + month + "/" + year + ")", provider, displayer, null, null, parent).run();
+            String title = "Category Sales Summary (" + month + "/" + year + ")" + (includeDiscount ? " [Discount Adjusted]" : "");
+            return new EntityListing<>(title, provider, displayer, null, null, parent).run();
         }
     }
 
